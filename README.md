@@ -1,4 +1,3 @@
-
 # Fingerprint Recognition System with AI and Cybersecurity
 
 A secure biometric recognition prototype integrating fingerprint liveness detection using CNNs, identity matching via OpenCV, and enhanced privacy through federated learning and differential privacy. Built for final year research and presentation.

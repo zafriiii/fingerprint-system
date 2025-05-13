@@ -1,7 +1,9 @@
 
 import tensorflow as tf
-from keras import layers, models
-from keras.preprocessing.image import ImageDataGenerator
+from tensorflow.keras.models import Sequential # type: ignore
+from tensorflow.keras.layers import Dense, Dropout # type: ignore
+from tensorflow.keras.applications import MobileNetV2 # type: ignore
+from tensorflow.keras.preprocessing.image import ImageDataGenerator # type: ignore
 import os
 
 # Configuration
@@ -9,9 +11,10 @@ BATCH_SIZE = 32
 IMG_SIZE = (224, 224)
 EPOCHS = 10
 
-# 1. Data Preparation
-dataset_path = 'path_to_fingerprint_dataset'  # Should have 'train/live', 'train/spoof', 'val/live', 'val/spoof'
+# Dataset path
+dataset_path = 'path_to_fingerprint_dataset'  # Should have 'train/live', 'train/spoof', etc.
 
+# Data generators
 train_datagen = ImageDataGenerator(rescale=1./255)
 val_datagen = ImageDataGenerator(rescale=1./255)
 
@@ -29,32 +32,32 @@ val_generator = val_datagen.flow_from_directory(
     class_mode='binary'
 )
 
-# 2. Model Architecture (MobileNetV2)
-base_model = tf.keras.applications.MobileNetV2(input_shape=IMG_SIZE + (3,),
-                                               include_top=False,
-                                               weights='imagenet')
+# Model using MobileNetV2
+base_model = MobileNetV2(input_shape=IMG_SIZE + (3,),
+                         include_top=False,
+                         weights='imagenet')
 base_model.trainable = False
 
-model = models.Sequential([
+model = Sequential([
     base_model,
-    layers.GlobalAveragePooling2D(),
-    layers.Dense(256, activation='relu'),
-    layers.Dropout(0.3),
-    layers.Dense(1, activation='sigmoid')  # For binary classification
+    tf.keras.layers.GlobalAveragePooling2D(),
+    Dense(256, activation='relu'),
+    Dropout(0.3),
+    Dense(1, activation='sigmoid')
 ])
 
-# 3. Compile Model
+# Compile model
 model.compile(optimizer='adam',
               loss='binary_crossentropy',
               metrics=['accuracy'])
 
-# 4. Train Model
+# Train model
 model.fit(
     train_generator,
     validation_data=val_generator,
     epochs=EPOCHS
 )
 
-# 5. Evaluate Model
+# Evaluate model
 loss, accuracy = model.evaluate(val_generator)
 print(f"Validation Accuracy: {accuracy * 100:.2f}%")
