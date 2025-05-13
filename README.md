@@ -1,4 +1,3 @@
-
 # Fingerprint Recognition System with AI and Cybersecurity
 
 A secure biometric recognition prototype integrating fingerprint liveness detection using CNNs, identity matching via OpenCV, and enhanced privacy through federated learning and differential privacy. Built for final year research and presentation.
@@ -47,38 +46,56 @@ This project aims to:
 ├── federated_client_with_dp.py         # FL client with DP integration
 ├── fingerprint_matcher.py              # OpenCV fingerprint comparison logic
 ├── main.py                             # Unified entry point for testing liveness + matching
+├── streamlit_app.py                    # Web GUI using Streamlit
 ├── setup.bat                           # Batch script to run virtual environment and scripts
-├── venv/                               # Python virtual environment (excluded from versioning)
-└── .vscode/                            # VS Code workspace settings (optional)
+├── requirements.txt                    # All Python dependencies
+├── FingerprintSystem_QuickStartGuide.pdf  # PDF guide for demo steps
+├── .gitignore                          # Git exclusions for cleaner repo
+└── venv/                               # Python virtual environment (excluded from versioning)
 ```
 
 ---
 
 ## Getting Started
 
-1. Clone the repository
+### 🧪 Local Setup
+
+1. Clone this repository:
+   ```bash
+   git clone https://github.com/zafriiii/fingerprint-system.git
+   cd fingerprint-system
+   ```
+
 2. Activate your virtual environment:
    ```bash
    .\venv\Scripts\activate
    ```
+
 3. Install dependencies:
    ```bash
    pip install -r requirements.txt
    ```
-4. Train model:
+
+4. Train model (optional):
    ```bash
    python liveness_detection_model.py
    ```
-5. Run prototype pipeline:
+
+5. Run CLI demo:
    ```bash
    python main.py
+   ```
+
+6. Run GUI demo:
+   ```bash
+   streamlit run streamlit_app.py
    ```
 
 ---
 
 ## Demonstration Workflow
 
-1. Load fingerprint image using OpenCV
+1. Upload fingerprint image using OpenCV or GUI
 2. Run liveness detection (ResNet18)
 3. If result is **Live**:
    - Match fingerprint with known template
