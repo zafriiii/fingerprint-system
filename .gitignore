@@ -1,0 +1,22 @@
+
+# Python artifacts
+__pycache__/
+*.pyc
+
+# Virtual environments
+venv/
+
+# Logs and debug
+*.log
+
+# Model checkpoints
+liveness_model.pth
+
+# Image outputs
+*.png
+*.jpg
+*.jpeg
+
+# System files
+.DS_Store
+Thumbs.db
