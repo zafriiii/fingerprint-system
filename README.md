@@ -49,7 +49,6 @@ This project aims to:
 ├── streamlit_app.py                    # Web GUI using Streamlit
 ├── setup.bat                           # Batch script to run virtual environment and scripts
 ├── requirements.txt                    # All Python dependencies
-├── FingerprintSystem_QuickStartGuide.pdf  # PDF guide for demo steps
 ├── .gitignore                          # Git exclusions for cleaner repo
 └── venv/                               # Python virtual environment (excluded from versioning)
 ```
