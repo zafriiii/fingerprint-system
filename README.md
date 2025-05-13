@@ -88,9 +88,9 @@ This project aims to:
 ---
 
 ## Authors
-- Developed by: [Your Name]
-- Supervised by: [Supervisor Name]
-- University: [University Name]
+- Developed by: Muhamad Zafri Bin Wahab
+- Supervised by: Dr. Nur Erlida Binti Ruslan
+- University: Multimedia University (MMU), Cyberjaya
 
 ---
 
