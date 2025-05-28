@@ -9,7 +9,7 @@ import os
 
 # Configuration
 BATCH_SIZE = 32
-NUM_EPOCHS = 10
+NUM_EPOCHS = 100
 LEARNING_RATE = 1e-4
 IMAGE_SIZE = 224
 
@@ -37,8 +37,8 @@ transform = transforms.Compose([
     transforms.ToTensor(),
 ])
 
-# Replace with your dataset path (subfolders: 'live', 'spoof')
-dataset_path = 'path_to_fingerprint_dataset'
+# Dataset path (subfolders: 'live', 'spoof')
+dataset_path = 'data'
 
 train_dataset = ImageFolder(root=os.path.join(dataset_path, 'train'), transform=transform)
 val_dataset = ImageFolder(root=os.path.join(dataset_path, 'val'), transform=transform)
@@ -95,6 +95,14 @@ def predict_single_image(image_path):
         output = model(tensor)
         result = "Live" if output.item() > 0.5 else "Spoof"
     return result
+
+transform = transforms.Compose([
+    transforms.Resize((224, 224)),
+    transforms.RandomRotation(10),
+    transforms.ColorJitter(brightness=0.2, contrast=0.2),
+    transforms.RandomHorizontalFlip(),
+    transforms.ToTensor()
+])
 
 # Example usage:
 # print(predict_single_image("sample_fingerprint.png"))

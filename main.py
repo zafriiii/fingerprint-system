@@ -22,7 +22,7 @@ def check_liveness(model, tensor):
         output = model(tensor)
         prob = output.item()
         print(f"Liveness score: {prob:.4f}")
-        return "Live" if prob > 0.5 else "Spoof"
+        return "Live" if prob > 0.45 else "Spoof"
 
 if __name__ == "__main__":
     live_model = FingerprintLivenessCNN()

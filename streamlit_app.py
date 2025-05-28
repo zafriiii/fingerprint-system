@@ -1,59 +1,66 @@
 
 import streamlit as st
-import cv2
-import numpy as np
 import torch
+import torch.nn as nn
+from torchvision import transforms
 from PIL import Image
-from liveness_detection_model import FingerprintLivenessCNN
-from fingerprint_matcher import match_fingerprints
+import io
 
-# Constants
+# === Configuration ===
+MODEL_PATH = 'liveness_model.pth'
 IMAGE_SIZE = 224
-MODEL_PATH = "liveness_model.pth"
-ENROLLED_IMAGE = "enrolled_template.png"  # Replace with path to enrolled fingerprint
+DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-# Load model
+# === Load Model ===
+class FingerprintLivenessCNN(nn.Module):
+    def __init__(self):
+        super(FingerprintLivenessCNN, self).__init__()
+        from torchvision import models
+        self.base_model = models.resnet18(pretrained=False)
+        self.base_model.fc = nn.Sequential(
+            nn.Linear(self.base_model.fc.in_features, 256),
+            nn.ReLU(),
+            nn.Dropout(0.3),
+            nn.Linear(256, 1),
+            nn.Sigmoid()
+        )
+
+    def forward(self, x):
+        return self.base_model(x)
+
 @st.cache_resource
 def load_model():
-    model = FingerprintLivenessCNN()
-    model.load_state_dict(torch.load(MODEL_PATH, map_location=torch.device('cpu')))
+    model = FingerprintLivenessCNN().to(DEVICE)
+    model.load_state_dict(torch.load(MODEL_PATH, map_location=DEVICE))
     model.eval()
     return model
 
-# Preprocess image for model
-def preprocess_image(image):
-    img = image.convert("L").resize((IMAGE_SIZE, IMAGE_SIZE))
-    img = np.array(img) / 255.0
-    tensor = torch.tensor(img).unsqueeze(0).unsqueeze(0).float()
-    return tensor
+model = load_model()
 
-# Check liveness
-def check_liveness(model, tensor):
-    with torch.no_grad():
-        output = model(tensor)
-        score = output.item()
-    return score, "Live" if score > 0.5 else "Spoof"
+# === Image Preprocessing ===
+transform = transforms.Compose([
+    transforms.Resize((IMAGE_SIZE, IMAGE_SIZE)),
+    transforms.ToTensor()
+])
 
-# App UI
-st.title("Fingerprint Recognition System")
-st.write("Upload a fingerprint image to check for liveness and match.")
+# === Streamlit UI ===
+st.title("Fingerprint Liveness Detection")
+st.write("Upload a fingerprint image to check if it's **Live** or **Spoofed**.")
 
-uploaded_file = st.file_uploader("Choose a fingerprint image", type=["png", "jpg", "jpeg"])
+uploaded_file = st.file_uploader("Choose a fingerprint image", type=["jpg", "jpeg", "png", "tif"])
 
 if uploaded_file is not None:
-    image = Image.open(uploaded_file)
-    st.image(image, caption="Uploaded Fingerprint", use_column_width=True)
+    image = Image.open(uploaded_file).convert("RGB")
+    st.image(image, caption='Uploaded Fingerprint', use_column_width=True)
 
-    tensor = preprocess_image(image)
-    model = load_model()
-    
-    score, result = check_liveness(model, tensor)
-    st.markdown(f"### Liveness Result: `{result}` (Score: {score:.4f})")
+    input_tensor = transform(image).unsqueeze(0).to(DEVICE)
+    with torch.no_grad():
+        output = model(input_tensor).item()
 
-    if result == "Live":
-        st.markdown("### Proceeding to fingerprint matching...")
-        cv2.imwrite("temp_input.png", np.array(image.convert("L")))
-        match_result = match_fingerprints("temp_input.png", ENROLLED_IMAGE)
-        st.success(match_result)
+    st.write("### Prediction:")
+    if output > 0.45:
+        st.success("✅ Live Fingerprint")
     else:
-        st.error("Spoofed fingerprint. Matching skipped.")
+        st.error("❌ Spoofed Fingerprint")
+
+    st.caption(f"Confidence Score: {output:.4f}")

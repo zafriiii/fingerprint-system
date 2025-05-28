@@ -9,10 +9,10 @@ import os
 # Configuration
 BATCH_SIZE = 32
 IMG_SIZE = (224, 224)
-EPOCHS = 10
+EPOCHS = 100
 
 # Dataset path
-dataset_path = 'path_to_fingerprint_dataset'  # Should have 'train/live', 'train/spoof', etc.
+dataset_path = 'data'
 
 # Data generators
 train_datagen = ImageDataGenerator(rescale=1./255)
