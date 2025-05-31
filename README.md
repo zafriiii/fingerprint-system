@@ -38,8 +38,8 @@ This project aims to:
 ## File Structure
 
 ```bash
-├── liveness_detection_model.py         # CNN model training using PyTorch
-├── liveness_detection_keras.py         # Optional: Keras model (alternative version)
+├── liveness_detection_model.py         # CNN model training using PyTorch (main)
+├── liveness_detection_keras.py         # Keras model (second version)
 ├── differential_privacy.py             # Training with DP via Opacus
 ├── federated_server.py                 # Flower federated server
 ├── federated_client.py                 # FL client (basic)
@@ -47,62 +47,10 @@ This project aims to:
 ├── fingerprint_matcher.py              # OpenCV fingerprint comparison logic
 ├── main.py                             # Unified entry point for testing liveness + matching
 ├── streamlit_app.py                    # Web GUI using Streamlit
-├── setup.bat                           # Batch script to run virtual environment and scripts
-├── requirements.txt                    # All Python dependencies
-├── FingerprintSystem_QuickStartGuide.pdf  # PDF guide for demo steps
-├── .gitignore                          # Git exclusions for cleaner repo
-└── venv/                               # Python virtual environment (excluded from versioning)
 ```
 
 ---
 
-## Getting Started
-
-### 🧪 Local Setup
-
-1. Clone this repository:
-   ```bash
-   git clone https://github.com/zafriiii/fingerprint-system.git
-   cd fingerprint-system
-   ```
-
-2. Activate your virtual environment:
-   ```bash
-   .\venv\Scripts\activate
-   ```
-
-3. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-4. Train model (optional):
-   ```bash
-   python liveness_detection_model.py
-   ```
-
-5. Run CLI demo:
-   ```bash
-   python main.py
-   ```
-
-6. Run GUI demo:
-   ```bash
-   streamlit run streamlit_app.py
-   ```
-
----
-
-## Demonstration Workflow
-
-1. Upload fingerprint image using OpenCV or GUI
-2. Run liveness detection (ResNet18)
-3. If result is **Live**:
-   - Match fingerprint with known template
-   - Output result: `Match` or `Mismatch`
-4. If **Spoofed**: Reject immediately
-
----
 
 ## Authors
 - Developed by: Muhamad Zafri Bin Wahab
