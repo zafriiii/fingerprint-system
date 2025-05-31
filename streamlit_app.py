@@ -51,16 +51,16 @@ uploaded_file = st.file_uploader("Choose a fingerprint image", type=["jpg", "jpe
 
 if uploaded_file is not None:
     image = Image.open(uploaded_file).convert("RGB")
-    st.image(image, caption='Uploaded Fingerprint', use_column_width=True)
+    st.image(image, caption='Uploaded Fingerprint', use_container_width=True)
 
     input_tensor = transform(image).unsqueeze(0).to(DEVICE)
     with torch.no_grad():
         output = model(input_tensor).item()
 
     st.write("### Prediction:")
-    if output > 0.45:
-        st.success("✅ Live Fingerprint")
+    if output < 0.5:
+        confidence = 1 - output  # confidence for Live
+        st.success(f"Live Fingerprint (Confidence: {confidence:.4f})")
     else:
-        st.error("❌ Spoofed Fingerprint")
-
-    st.caption(f"Confidence Score: {output:.4f}")
+        confidence = output  # confidence for Spoof
+        st.error(f"Spoofed Fingerprint (Confidence: {confidence:.4f})")

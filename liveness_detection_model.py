@@ -3,21 +3,21 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, Dataset
-from torchvision import models, transforms
+from torchvision import transforms
 from torchvision.datasets import ImageFolder
+from torchvision.models import resnet18, ResNet18_Weights
 import os
 
-# Configuration
 BATCH_SIZE = 32
 NUM_EPOCHS = 100
 LEARNING_RATE = 1e-4
 IMAGE_SIZE = 224
 
-# 1. Define CNN model using ResNet18
+# 1. CNN model using ResNet18
 class FingerprintLivenessCNN(nn.Module):
     def __init__(self):
         super(FingerprintLivenessCNN, self).__init__()
-        self.base_model = models.resnet18(pretrained=True)
+        self.base_model = resnet18(weights=ResNet18_Weights.DEFAULT)
         for param in self.base_model.parameters():
             param.requires_grad = False
         self.base_model.fc = nn.Sequential(
@@ -32,16 +32,24 @@ class FingerprintLivenessCNN(nn.Module):
         return self.base_model(x)
 
 # 2. Dataset and transforms
-transform = transforms.Compose([
+train_transform = transforms.Compose([
+    transforms.Resize((IMAGE_SIZE, IMAGE_SIZE)),
+    transforms.ColorJitter(brightness=0.3, contrast=0.3),
+    transforms.RandomRotation(15),
+    transforms.RandomHorizontalFlip(),
+    transforms.ToTensor(),
+])
+
+val_transform = transforms.Compose([
     transforms.Resize((IMAGE_SIZE, IMAGE_SIZE)),
     transforms.ToTensor(),
 ])
 
-# Dataset path (subfolders: 'live', 'spoof')
+# Dataset path
 dataset_path = 'data'
 
-train_dataset = ImageFolder(root=os.path.join(dataset_path, 'train'), transform=transform)
-val_dataset = ImageFolder(root=os.path.join(dataset_path, 'val'), transform=transform)
+train_dataset = ImageFolder(root=os.path.join(dataset_path, 'train'), transform=train_transform)
+val_dataset = ImageFolder(root=os.path.join(dataset_path, 'val'), transform=val_transform)
 
 train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
 val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False)
@@ -66,7 +74,7 @@ for epoch in range(NUM_EPOCHS):
         total_loss += loss.item()
     print(f"Epoch [{epoch+1}/{NUM_EPOCHS}], Loss: {total_loss/len(train_loader):.4f}")
 
-# 5. Evaluation
+# 5. Evaluate
 model.eval()
 correct = 0
 total = 0
@@ -83,7 +91,7 @@ print(f"Validation Accuracy: {100 * correct / total:.2f}%")
 torch.save(model.state_dict(), "liveness_model.pth")
 print("Model saved as liveness_model.pth")
 
-# 7. Optional: Predict a single fingerprint (for demo or integration)
+# 7. Fingerrint Prediction
 def predict_single_image(image_path):
     import cv2
     model.eval()
@@ -95,14 +103,3 @@ def predict_single_image(image_path):
         output = model(tensor)
         result = "Live" if output.item() > 0.5 else "Spoof"
     return result
-
-transform = transforms.Compose([
-    transforms.Resize((224, 224)),
-    transforms.RandomRotation(10),
-    transforms.ColorJitter(brightness=0.2, contrast=0.2),
-    transforms.RandomHorizontalFlip(),
-    transforms.ToTensor()
-])
-
-# Example usage:
-# print(predict_single_image("sample_fingerprint.png"))

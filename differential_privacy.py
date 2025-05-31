@@ -1,6 +1,4 @@
 
-# differential_privacy_example.py (Integrating Opacus with fingerprint CNN training)
-
 import torch
 import torch.nn as nn
 import torch.optim as optim
