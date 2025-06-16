@@ -1,6 +1,3 @@
-
-# client.py (simulated local training client for fingerprint recognition)
-
 import flwr as fl
 import torch
 import torch.nn as nn

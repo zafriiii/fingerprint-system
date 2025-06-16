@@ -1,11 +1,8 @@
 
 import os
-import cv2
-import numpy as np
 from pathlib import Path
 from torchvision import transforms
 from PIL import Image
-import random
 
 # Input/output folders
 input_dir = "data/train/spoof"

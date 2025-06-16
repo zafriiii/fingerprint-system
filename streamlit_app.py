@@ -6,12 +6,12 @@ from torchvision import transforms
 from PIL import Image
 import io
 
-# === Configuration ===
+# Configuration
 MODEL_PATH = 'liveness_model.pth'
 IMAGE_SIZE = 224
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-# === Load Model ===
+# Load Model
 class FingerprintLivenessCNN(nn.Module):
     def __init__(self):
         super(FingerprintLivenessCNN, self).__init__()
@@ -37,13 +37,13 @@ def load_model():
 
 model = load_model()
 
-# === Image Preprocessing ===
+# Image Preprocessing
 transform = transforms.Compose([
     transforms.Resize((IMAGE_SIZE, IMAGE_SIZE)),
     transforms.ToTensor()
 ])
 
-# === Streamlit UI ===
+# Streamlit UI 
 st.title("Fingerprint Liveness Detection")
 st.write("Upload a fingerprint image to check if it's **Live** or **Spoofed**.")
 
