@@ -147,6 +147,26 @@ with tab2:
     st.subheader("Summary Metrics Table")
     st.table({k: [v] for k, v in metrics_table.items()})
 
+    # Calculate and display processing time per sample (ms)
+    st.subheader("Processing Time")
+    if "timestamp" in df.columns and "run_id" in df.columns:
+        per_sample_rows = df[(df["run_id"] == selected_run) & (df["epoch"] != "summary")]
+        if not per_sample_rows.empty:
+            if "processing_time" in per_sample_rows.columns:
+                total_time_ms = per_sample_rows["processing_time"].sum()
+                num_samples = len(per_sample_rows)
+                avg_time_ms = total_time_ms / num_samples if num_samples > 0 else None
+            else:
+                avg_time_ms = None
+            if avg_time_ms is not None:
+                st.write(f"**Processing Time per Sample:** {avg_time_ms:.2f} ms")
+            else:
+                st.write("**Processing Time per Sample:** N/A (not recorded)")
+        else:
+            st.write("**Processing Time per Sample:** N/A (no per-sample data)")
+    else:
+        st.write("**Processing Time per Sample:** N/A (missing columns)")
+
     # Bar chart for metrics
     st.write("**Metrics Bar Chart:**")
     metric_names = [k for k in metrics_table.keys() if k != "Binary Cross Entropy"]

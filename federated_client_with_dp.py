@@ -109,23 +109,29 @@ class FlowerClientDP(fl.client.NumPyClient):
         all_preds = []
         all_labels = []
         all_probs = []
+        processing_times = []
         with torch.no_grad():
             for x, y in self.trainloader:
                 x, y = x, y.float()
                 y = y.unsqueeze(1)
+                import time
+                start = time.time()
                 output = self.base_model(x)
+                end = time.time()
+                elapsed_ms = (end - start) * 1000  # ms for the batch
                 probs = output.cpu().numpy()
                 preds = (output > 0.5).float().cpu().numpy()
                 all_preds.extend(preds)
                 all_labels.extend(y.cpu().numpy())
                 all_probs.extend(probs)
+                processing_times.extend([elapsed_ms / len(y)] * len(y))
         # Save to CSV (append per-sample metrics)
         import uuid
         from datetime import datetime
         run_id = str(uuid.uuid4())
         timestamp = datetime.now().isoformat()
         metrics_df = pd.DataFrame(
-            {"y_true": all_labels, "y_pred": all_preds, "y_prob": all_probs}
+            {"y_true": all_labels, "y_pred": all_preds, "y_prob": all_probs, "processing_time": processing_times}
         )
         metrics_df['run_id'] = run_id
         metrics_df['epoch'] = ''

@@ -100,6 +100,7 @@ all_labels = []
 all_preds = []
 all_probs = []
 all_epochs = []
+processing_times = []
 run_id = str(uuid.uuid4())
 timestamp = datetime.now().isoformat()
 
@@ -107,13 +108,20 @@ model.eval()
 with torch.no_grad():
     for images, labels in val_loader:
         images, labels = images.to(device), labels.float().to(device)
+        import time
+
+        start = time.time()
         outputs = model(images).squeeze()
+        end = time.time()
+        elapsed_ms = (end - start) * 1000  # ms for the batch
         probs = outputs.cpu().numpy()
         preds = (outputs > 0.5).float().cpu().numpy()
         all_labels.extend(labels.cpu().numpy())
         all_preds.extend(preds)
         all_probs.extend(probs)
         all_epochs.extend([NUM_EPOCHS] * len(labels))
+        # Record per-sample processing time (divide batch time by batch size)
+        processing_times.extend([elapsed_ms / len(labels)] * len(labels))
 
 # Prepare DataFrame with extra columns (including summary metrics for each row)
 # Calculate summary metrics before creating the DataFrame
@@ -130,6 +138,7 @@ metrics_df = pd.DataFrame(
         "y_true": all_labels,
         "y_pred": all_preds,
         "y_prob": all_probs,
+        "processing_time": processing_times,
         "accuracy": [accuracy] * len(all_labels),
         "precision": [precision] * len(all_labels),
         "recall": [recall] * len(all_labels),
