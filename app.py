@@ -226,7 +226,17 @@ with tab2:
         fig3, ax3 = plt.subplots()
         for i, rid in enumerate(run_ids):
             row = summary_df[summary_df["run_id"] == rid].iloc[0]
-            values = [float(row.get(m, 0)) for m in compare_metrics]
+            values = []
+            for m in compare_metrics:
+                val = row.get(m, 0)
+                try:
+                    # Only convert to float if not a confusion matrix string
+                    if isinstance(val, str) and ',' in val:
+                        values.append(0.0)
+                    else:
+                        values.append(float(val))
+                except (ValueError, TypeError):
+                    values.append(0.0)
             ax3.bar(x + i * width, values, width, label=str(rid))
         ax3.set_xticks(x + width * (len(run_ids) - 1) / 2)
         ax3.set_xticklabels([m.replace("_", " ").title() for m in compare_metrics])
@@ -238,21 +248,22 @@ with tab2:
 
     # Confusion Matrix Heatmap
     st.subheader("Confusion Matrix")
-    if "conf_matrix" in run_metrics:
-        cm_str = run_metrics["conf_matrix"]
-        try:
+    cm_str = run_metrics.get("conf_matrix", "")
+    try:
+        # Only parse if cm_str is a string
+        if isinstance(cm_str, str):
             cm_vals = [int(x) for x in cm_str.split(",") if x.strip() != ""]
-            if len(cm_vals) == 4:
-                cm = np.array(cm_vals).reshape(2, 2)
-                fig_cm, ax_cm = plt.subplots()
-                sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", ax=ax_cm, cbar=False)
-                ax_cm.set_xlabel("Predicted")
-                ax_cm.set_ylabel("Actual")
-                ax_cm.set_title("Confusion Matrix")
-                st.pyplot(fig_cm)
-            else:
-                st.info("Confusion matrix data is incomplete for this run.")
-        except Exception as e:
-            st.info(f"Could not parse confusion matrix: {e}")
-    else:
-        st.info("No confusion matrix data available in metrics.csv.")
+        else:
+            cm_vals = []
+        if len(cm_vals) == 4:
+            cm = np.array(cm_vals).reshape(2, 2)
+            fig_cm, ax_cm = plt.subplots()
+            sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", ax=ax_cm, cbar=False)
+            ax_cm.set_xlabel("Predicted")
+            ax_cm.set_ylabel("Actual")
+            ax_cm.set_title("Confusion Matrix")
+            st.pyplot(fig_cm)
+        else:
+            st.info("Confusion matrix data is incomplete for this run.")
+    except Exception as e:
+        st.info(f"Could not parse confusion matrix: {e}")

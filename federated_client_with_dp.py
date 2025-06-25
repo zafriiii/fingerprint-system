@@ -50,6 +50,22 @@ def load_data():
     return DataLoader(Subset(dataset, indices), batch_size=16, shuffle=True)
 
 
+# Define a strict header and column order for all metrics.csv writes
+METRICS_HEADER = [
+    "run_id", "epoch", "timestamp", "y_true", "y_pred", "y_prob", "processing_time",
+    "accuracy", "precision", "recall", "f1_score", "robustness_tnr", "bce", "conf_matrix", "source"
+]
+
+def write_metrics_row(row, csv_path):
+    import pandas as pd
+    row_filled = {k: row.get(k, '') for k in METRICS_HEADER}
+    df = pd.DataFrame([row_filled])
+    if os.path.exists(csv_path):
+        df.to_csv(csv_path, mode="a", header=False, index=False)
+    else:
+        df.to_csv(csv_path, header=METRICS_HEADER, index=False)
+
+
 # Flower client with DP
 class FlowerClientDP(fl.client.NumPyClient):
     def __init__(self, model, trainloader):
@@ -122,17 +138,7 @@ class FlowerClientDP(fl.client.NumPyClient):
                 "bce": avg_loss,
                 "source": 'FL+DP',
             }
-            header = [
-                "run_id", "epoch", "timestamp", "y_true", "y_pred", "y_prob", "processing_time",
-                "accuracy", "precision", "recall", "f1_score", "robustness_tnr", "bce", "source"
-            ]
-            csv_path = 'metrics.csv'
-            import pandas as pd
-            epoch_df = pd.DataFrame([epoch_row])
-            if os.path.exists(csv_path):
-                epoch_df.to_csv(csv_path, mode='a', header=False, index=False)
-            else:
-                epoch_df.to_csv(csv_path, header=header, index=False)
+            write_metrics_row(epoch_row, 'metrics.csv')
         return self.get_parameters(config={}), len(self.trainloader.dataset), {}
 
     def evaluate(self, parameters, config):
