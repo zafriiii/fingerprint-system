@@ -1,4 +1,3 @@
-
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -7,9 +6,10 @@ from torchvision import transforms
 from torchvision.datasets import ImageFolder
 from torchvision.models import resnet18, ResNet18_Weights
 import os
+import pandas as pd
 
 BATCH_SIZE = 32
-NUM_EPOCHS = 5
+NUM_EPOCHS = 20 
 LEARNING_RATE = 1e-4
 IMAGE_SIZE = 224
 
@@ -64,6 +64,7 @@ optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
 for epoch in range(NUM_EPOCHS):
     model.train()
     total_loss = 0
+    batch_count = 0
     for images, labels in train_loader:
         images, labels = images.to(device), labels.float().to(device)
         outputs = model(images).squeeze()
@@ -72,20 +73,30 @@ for epoch in range(NUM_EPOCHS):
         loss.backward()
         optimizer.step()
         total_loss += loss.item()
-    print(f"Epoch [{epoch+1}/{NUM_EPOCHS}], Loss: {total_loss/len(train_loader):.4f}")
+        batch_count += 1
+        print(f"Epoch [{epoch+1}/{NUM_EPOCHS}] Batch [{batch_count}/{len(train_loader)}] Loss: {loss.item():.4f}")
+    print(f"Epoch [{epoch+1}/{NUM_EPOCHS}], Average Loss: {total_loss/len(train_loader):.4f}")
 
-# 5. Evaluate
+# 5. Evaluate and save metrics
+all_labels = []
+all_preds = []
+all_probs = []
+
 model.eval()
-correct = 0
-total = 0
 with torch.no_grad():
     for images, labels in val_loader:
         images, labels = images.to(device), labels.float().to(device)
         outputs = model(images).squeeze()
-        predicted = (outputs > 0.5).float()
-        total += labels.size(0)
-        correct += (predicted == labels).sum().item()
-print(f"Validation Accuracy: {100 * correct / total:.2f}%")
+        probs = outputs.cpu().numpy()
+        preds = (outputs > 0.5).float().cpu().numpy()
+        all_labels.extend(labels.cpu().numpy())
+        all_preds.extend(preds)
+        all_probs.extend(probs)
+
+# Save to CSV
+metrics_df = pd.DataFrame({'y_true': all_labels, 'y_pred': all_preds, 'y_prob': all_probs})
+metrics_df.to_csv('metrics.csv', index=False)
+print("Validation metrics saved to metrics.csv")
 
 # 6. Save model
 torch.save(model.state_dict(), "liveness_model.pth")

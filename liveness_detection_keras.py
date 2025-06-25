@@ -1,4 +1,3 @@
-
 import tensorflow as tf
 from tensorflow.keras.models import Sequential # type: ignore
 from tensorflow.keras.layers import Dense, Dropout # type: ignore
@@ -48,8 +47,7 @@ model = Sequential([
 
 # Compile model
 model.compile(optimizer='adam',
-              loss='binary_crossentropy',
-              metrics=['accuracy'])
+              loss='binary_crossentropy')
 
 # Train model
 model.fit(

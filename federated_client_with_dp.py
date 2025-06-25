@@ -1,4 +1,3 @@
-
 # client_dp.py (Federated client with Differential Privacy using Flower + Opacus)
 
 import flwr as fl
@@ -13,6 +12,7 @@ from opacus.validators import ModuleValidator
 import os
 import numpy as np
 import random
+import pandas as pd
 
 # Model definition
 class FingerprintModel(nn.Module):
@@ -88,11 +88,38 @@ class FlowerClientDP(fl.client.NumPyClient):
 
     def evaluate(self, parameters, config):
         self.set_parameters(parameters)
+        self.model.eval()
+        all_preds = []
+        all_labels = []
+        all_probs = []
+        with torch.no_grad():
+            for x, y in self.trainloader:
+                x, y = x, y.float()
+                y = y.unsqueeze(1)
+                output = self.model(x)
+                probs = output.cpu().numpy()
+                preds = (output > 0.5).float().cpu().numpy()
+                all_preds.extend(preds)
+                all_labels.extend(y.cpu().numpy())
+                all_probs.extend(probs)
+        # Save to CSV
+        metrics_df = pd.DataFrame({'y_true': all_labels, 'y_pred': all_preds, 'y_prob': all_probs})
+        metrics_df.to_csv('metrics.csv', index=False)
+        print("Federated validation metrics saved to metrics.csv")
         return 0.0, len(self.trainloader.dataset), {}
 
 # Launch client
 if __name__ == "__main__":
     model = FingerprintModel()
+    # Load pretrained weights if available
+    if os.path.exists("liveness_model.pth"):
+        model.load_state_dict(torch.load("liveness_model.pth", map_location=torch.device('cpu')))
+        print("Loaded pretrained weights from liveness_model.pth")
+    else:
+        print("No pretrained weights found, starting from scratch.")
     trainloader = load_data()
     client = FlowerClientDP(model, trainloader)
     fl.client.start_numpy_client(server_address="localhost:8080", client=client)
+    # Save the updated model after federated training
+    torch.save(model.state_dict(), "liveness_model.pth")
+    print("Updated model saved as liveness_model.pth")

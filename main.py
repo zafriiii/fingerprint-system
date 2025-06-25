@@ -1,9 +1,9 @@
-
 import cv2
 import torch
 import torchvision.transforms as transforms
 from liveness_detection_model import FingerprintLivenessCNN
 from fingerprint_matcher import match_fingerprints
+from performance_metrics import calculate_metrics, get_confusion_matrix, robustness_against_spoofing, binary_cross_entropy
 
 IMAGE_SIZE = 224
 
@@ -24,6 +24,14 @@ def check_liveness(model, tensor):
         print(f"Liveness score: {prob:.4f}")
         return "Live" if prob > 0.45 else "Spoof"
 
+def evaluate_performance(y_true, y_pred, y_prob=None):
+    metrics = calculate_metrics(y_true, y_pred)
+    print("Performance Metrics:", metrics)
+    print("Confusion Matrix:\n", get_confusion_matrix(y_true, y_pred))
+    print("Robustness against spoofing:", robustness_against_spoofing(y_true, y_pred))
+    if y_prob is not None:
+        print("Binary Cross Entropy:", binary_cross_entropy(y_true, y_prob))
+
 if __name__ == "__main__":
     live_model = FingerprintLivenessCNN()
     live_model.load_state_dict(torch.load("liveness_model.pth", map_location=torch.device('cpu')))
@@ -41,5 +49,12 @@ if __name__ == "__main__":
             print(match_result)
         else:
             print("Fingerprint is SPOOFED. Access denied.")
+
+        # Example: Evaluate performance (replace with your real data)
+        # y_true = [0, 1, 0, 1]  # 0=live, 1=spoof
+        # y_pred = [0, 1, 1, 0]
+        # y_prob = [0.9, 0.8, 0.4, 0.3]  # predicted probabilities
+        # evaluate_performance(y_true, y_pred, y_prob)
+
     except Exception as e:
         print("Error:", str(e))
