@@ -7,6 +7,8 @@ from torchvision.datasets import ImageFolder
 from torchvision.models import resnet18, ResNet18_Weights
 import os
 import pandas as pd
+import uuid
+from datetime import datetime
 
 BATCH_SIZE = 32
 NUM_EPOCHS = 20 
@@ -81,6 +83,9 @@ for epoch in range(NUM_EPOCHS):
 all_labels = []
 all_preds = []
 all_probs = []
+all_epochs = []
+run_id = str(uuid.uuid4())
+timestamp = datetime.now().isoformat()
 
 model.eval()
 with torch.no_grad():
@@ -92,11 +97,25 @@ with torch.no_grad():
         all_labels.extend(labels.cpu().numpy())
         all_preds.extend(preds)
         all_probs.extend(probs)
+        all_epochs.extend([NUM_EPOCHS] * len(labels))
 
-# Save to CSV
-metrics_df = pd.DataFrame({'y_true': all_labels, 'y_pred': all_preds, 'y_prob': all_probs})
-metrics_df.to_csv('metrics.csv', index=False)
-print("Validation metrics saved to metrics.csv")
+# Prepare DataFrame with extra columns
+metrics_df = pd.DataFrame({
+    'run_id': [run_id] * len(all_labels),
+    'epoch': all_epochs,
+    'timestamp': [timestamp] * len(all_labels),
+    'y_true': all_labels,
+    'y_pred': all_preds,
+    'y_prob': all_probs
+})
+
+# Append to CSV if exists, else create new
+csv_path = 'metrics.csv'
+if os.path.exists(csv_path):
+    metrics_df.to_csv(csv_path, mode='a', header=False, index=False)
+else:
+    metrics_df.to_csv(csv_path, index=False)
+print("Validation metrics appended to metrics.csv")
 
 # 6. Save model
 torch.save(model.state_dict(), "liveness_model.pth")
