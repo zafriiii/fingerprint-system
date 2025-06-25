@@ -10,6 +10,7 @@ from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 from torchvision.datasets import ImageFolder
 from torchvision.models import ResNet18_Weights, resnet18
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 
 BATCH_SIZE = 32
 NUM_EPOCHS = 20
@@ -114,7 +115,13 @@ with torch.no_grad():
         all_probs.extend(probs)
         all_epochs.extend([NUM_EPOCHS] * len(labels))
 
-# Prepare DataFrame with extra columns
+# Prepare DataFrame with extra columns (including summary metrics for each row)
+# Calculate summary metrics before creating the DataFrame
+accuracy = accuracy_score(all_labels, all_preds)
+precision = precision_score(all_labels, all_preds, zero_division=0)
+recall = recall_score(all_labels, all_preds, zero_division=0)
+f1 = f1_score(all_labels, all_preds, zero_division=0)
+
 metrics_df = pd.DataFrame(
     {
         "run_id": [run_id] * len(all_labels),
@@ -123,6 +130,11 @@ metrics_df = pd.DataFrame(
         "y_true": all_labels,
         "y_pred": all_preds,
         "y_prob": all_probs,
+        "accuracy": [accuracy] * len(all_labels),
+        "precision": [precision] * len(all_labels),
+        "recall": [recall] * len(all_labels),
+        "f1_score": [f1] * len(all_labels),
+        "source": ['Standalone'] * len(all_labels),
     }
 )
 
@@ -138,6 +150,39 @@ print("Validation metrics appended to metrics.csv")
 torch.save(model.state_dict(), "liveness_model.pth")
 print("Model saved as liveness_model.pth")
 
+# Calculate summary metrics
+accuracy = accuracy_score(all_labels, all_preds)
+precision = precision_score(all_labels, all_preds, zero_division=0)
+recall = recall_score(all_labels, all_preds, zero_division=0)
+f1 = f1_score(all_labels, all_preds, zero_division=0)
+
+# Append summary metrics as a special row in metrics.csv
+summary_row = {
+    'run_id': run_id,
+    'epoch': 'summary',
+    'timestamp': timestamp,
+    'y_true': '',
+    'y_pred': '',
+    'y_prob': '',
+    'accuracy': accuracy,
+    'precision': precision,
+    'recall': recall,
+    'f1_score': f1,
+    'source': 'Standalone'
+}
+# Ensure all columns exist in the same order as metrics_df
+all_columns = list(metrics_df.columns) + ['accuracy', 'precision', 'recall', 'f1_score', 'source']
+# Fill missing columns with empty string
+for col in all_columns:
+    if col not in summary_row:
+        summary_row[col] = ''
+summary_row = {k: summary_row[k] for k in all_columns}
+summary_df = pd.DataFrame([summary_row])
+if os.path.exists(csv_path):
+    summary_df.to_csv(csv_path, mode="a", header=False, index=False)
+else:
+    summary_df.to_csv(csv_path, index=False)
+print("Summary metrics appended to metrics.csv")
 
 # 7. Fingerrint Prediction
 def predict_single_image(image_path):

@@ -14,6 +14,7 @@ from opacus.validators import ModuleValidator
 from torch.utils.data import DataLoader, Subset
 from torchvision import models, transforms
 from torchvision.datasets import ImageFolder
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 
 
 # Model definition
@@ -118,12 +119,66 @@ class FlowerClientDP(fl.client.NumPyClient):
                 all_preds.extend(preds)
                 all_labels.extend(y.cpu().numpy())
                 all_probs.extend(probs)
-        # Save to CSV
+        # Save to CSV (append per-sample metrics)
+        import uuid
+        from datetime import datetime
+        run_id = str(uuid.uuid4())
+        timestamp = datetime.now().isoformat()
         metrics_df = pd.DataFrame(
             {"y_true": all_labels, "y_pred": all_preds, "y_prob": all_probs}
         )
-        metrics_df.to_csv("metrics.csv", index=False)
-        print("Federated validation metrics saved to metrics.csv")
+        metrics_df['run_id'] = run_id
+        metrics_df['epoch'] = ''
+        metrics_df['timestamp'] = timestamp
+        metrics_df['accuracy'] = ''
+        metrics_df['precision'] = ''
+        metrics_df['recall'] = ''
+        metrics_df['f1_score'] = ''
+        metrics_df['source'] = 'FL+DP'
+        csv_path = 'metrics.csv'
+        if os.path.exists(csv_path):
+            metrics_df.to_csv(csv_path, mode='a', header=False, index=False)
+        else:
+            metrics_df.to_csv(csv_path, index=False)
+        print('Federated validation metrics appended to metrics.csv')
+        # Save summary metrics as a special row in metrics.csv
+        accuracy = accuracy_score(all_labels, all_preds)
+        precision = precision_score(all_labels, all_preds, zero_division=0)
+        recall = recall_score(all_labels, all_preds, zero_division=0)
+        f1 = f1_score(all_labels, all_preds, zero_division=0)
+        # Robustness against spoofing (TNR)
+        tn = ((np.array(all_labels) == 0) & (np.array(all_preds) == 0)).sum()
+        fp = ((np.array(all_labels) == 0) & (np.array(all_preds) == 1)).sum()
+        tnr = tn / (tn + fp) if (tn + fp) > 0 else 0.0
+        # Binary Cross Entropy (BCE)
+        bce = nn.BCELoss()(torch.tensor(all_probs), torch.tensor(all_labels)).item()
+        summary_row = {
+            'run_id': run_id,
+            'epoch': 'summary',
+            'timestamp': timestamp,
+            'y_true': '',
+            'y_pred': '',
+            'y_prob': '',
+            'accuracy': accuracy,
+            'precision': precision,
+            'recall': recall,
+            'f1_score': f1,
+            'robustness_tnr': tnr,
+            'bce': bce,
+            'source': 'FL+DP'
+        }
+        # Ensure all columns exist in the same order as metrics_df
+        all_columns = list(metrics_df.columns) + ['accuracy', 'precision', 'recall', 'f1_score', 'robustness_tnr', 'bce', 'source']
+        for col in all_columns:
+            if col not in summary_row:
+                summary_row[col] = ''
+        summary_row = {k: summary_row[k] for k in all_columns}
+        summary_df = pd.DataFrame([summary_row])
+        if os.path.exists(csv_path):
+            summary_df.to_csv(csv_path, mode='a', header=False, index=False)
+        else:
+            summary_df.to_csv(csv_path, index=False)
+        print('Summary metrics appended to metrics.csv')
         return 0.0, len(self.trainloader.dataset), {}
 
 

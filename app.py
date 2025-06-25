@@ -105,104 +105,74 @@ with tab1:
 
 with tab2:
     st.write("### Performance Metrics")
-    st.write("Upload your ground truth and prediction files (CSV) or use example data.")
-    uploaded_metrics = st.file_uploader(
-        "Upload CSV with columns: run_id, epoch, timestamp, y_true, y_pred, y_prob (optional)",
-        type=["csv"],
-        key="metrics",
-    )
-    import os
-
     import matplotlib.pyplot as plt
     import pandas as pd
     import seaborn as sns
+    import numpy as np
 
-    if uploaded_metrics is not None:
-        df = pd.read_csv(uploaded_metrics)
-        st.write("**Raw Metrics Data:**")
-        st.dataframe(df)
-    elif os.path.exists("metrics.csv"):
+    # Always try to load metrics.csv
+    if os.path.exists("metrics.csv"):
         df = pd.read_csv("metrics.csv")
         st.info("Loaded metrics.csv automatically.")
         st.write("**Raw Metrics Data:**")
         st.dataframe(df)
     else:
-        df = pd.DataFrame(
-            {
-                "run_id": ["example"] * 8,
-                "epoch": [20] * 8,
-                "timestamp": ["example"] * 8,
-                "y_true": [0, 1, 0, 1, 1, 0, 1, 0],
-                "y_pred": [0, 1, 1, 0, 1, 0, 1, 0],
-                "y_prob": [0.9, 0.8, 0.4, 0.3, 0.7, 0.2, 0.85, 0.1],
-            }
-        )
-        st.dataframe(df)
+        st.warning("metrics.csv not found. Please run training or federated learning first.")
+        st.stop()
 
-    # Option to filter by run_id if present
-    if "run_id" in df.columns:
-        run_ids = df["run_id"].unique()
-        selected_run = st.selectbox(
-            "Select run_id to view metrics for a specific run:", run_ids
-        )
-        filtered_df = df[df["run_id"] == selected_run]
+    # Filter for summary rows
+    if "epoch" in df.columns:
+        summary_df = df[df["epoch"] == "summary"]
+        if summary_df.empty:
+            st.warning("No summary metrics found in metrics.csv.")
+            st.stop()
     else:
-        st.info("No run_id column found. Showing all data.")
-        filtered_df = df
-    y_true = filtered_df["y_true"]
-    y_pred = filtered_df["y_pred"]
-    y_prob = filtered_df["y_prob"] if "y_prob" in filtered_df.columns else None
+        st.warning("No 'epoch' column found. Please update your metrics.csv format.")
+        st.stop()
 
-    # Calculate metrics
-    metrics = calculate_metrics(y_true, y_pred)
-    st.write("\n---\n")
+    # Option to select run_id
+    run_ids = summary_df["run_id"].unique()
+    selected_run = st.selectbox("Select run_id to view metrics for a specific run:", run_ids)
+    run_metrics = summary_df[summary_df["run_id"] == selected_run].iloc[0]
+
+    # Show summary metrics table
+    metrics_table = {
+        "Accuracy": run_metrics.get("accuracy", None),
+        "Precision": run_metrics.get("precision", None),
+        "Recall": run_metrics.get("recall", None),
+        "F1-Score": run_metrics.get("f1_score", None),
+        "Robustness (TNR)": run_metrics.get("robustness_tnr", None),
+        "Binary Cross Entropy": run_metrics.get("bce", None),
+    }
     st.subheader("Summary Metrics Table")
-    st.table({k: [v] for k, v in metrics.items()})
+    st.table({k: [v] for k, v in metrics_table.items()})
 
-    cm = get_confusion_matrix(y_true, y_pred)
-    st.write("**Confusion Matrix:**")
-    fig, ax = plt.subplots()
-    sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", ax=ax)
-    ax.set_xlabel("Predicted")
-    ax.set_ylabel("True")
-    st.pyplot(fig)
-
-    robustness = robustness_against_spoofing(y_true, y_pred)
-    st.write(f"**Robustness against spoofing:** {robustness}")
-    if y_prob is not None:
-        bce = binary_cross_entropy(y_true, y_prob)
-        st.write(f"**Binary Cross Entropy:** {bce}")
-
-    # Show bar chart for metrics
+    # Bar chart for metrics
     st.write("**Metrics Bar Chart:**")
+    metric_names = [k for k in metrics_table.keys() if k != "Binary Cross Entropy"]
+    metric_values = [float(run_metrics.get(col.lower().replace(" ", "_"), 0)) for col in metric_names]
     fig2, ax2 = plt.subplots()
-    metric_names = list(metrics.keys())
-    metric_values = list(metrics.values())
     ax2.bar(metric_names, metric_values, color="skyblue")
     ax2.set_ylim(0, 1)
     st.pyplot(fig2)
 
-    # Calculate metrics for each run_id for comparison chart
-    if "run_id" in df.columns and len(df["run_id"].unique()) > 1:
+    # Show BCE separately
+    st.write(f"**Binary Cross Entropy:** {run_metrics.get('bce', None)}")
+
+    # Comparison across runs
+    if len(run_ids) > 1:
         st.write("\n---\n")
         st.subheader("Comparison Across Runs")
-        run_metrics = {}
-        for rid in df["run_id"].unique():
-            sub = df[df["run_id"] == rid]
-            y_true_sub = sub["y_true"]
-            y_pred_sub = sub["y_pred"]
-            run_metrics[rid] = calculate_metrics(y_true_sub, y_pred_sub)
-        import numpy as np
-
-        metric_names = list(next(iter(run_metrics.values())).keys())
-        x = np.arange(len(metric_names))
-        width = 0.8 / len(run_metrics)  # width of each bar
+        compare_metrics = ["accuracy", "precision", "recall", "f1_score", "robustness_tnr"]
+        x = np.arange(len(compare_metrics))
+        width = 0.8 / len(run_ids)
         fig3, ax3 = plt.subplots()
-        for i, (rid, metrics_dict) in enumerate(run_metrics.items()):
-            values = [metrics_dict[m] for m in metric_names]
+        for i, rid in enumerate(run_ids):
+            row = summary_df[summary_df["run_id"] == rid].iloc[0]
+            values = [float(row.get(m, 0)) for m in compare_metrics]
             ax3.bar(x + i * width, values, width, label=str(rid))
-        ax3.set_xticks(x + width * (len(run_metrics) - 1) / 2)
-        ax3.set_xticklabels(metric_names)
+        ax3.set_xticks(x + width * (len(run_ids) - 1) / 2)
+        ax3.set_xticklabels([m.replace("_", " ").title() for m in compare_metrics])
         ax3.set_ylim(0, 1)
         ax3.set_ylabel("Score")
         ax3.set_title("Metrics Comparison Across Runs")
