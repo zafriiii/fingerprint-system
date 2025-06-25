@@ -10,7 +10,7 @@ from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 from torchvision.datasets import ImageFolder
 from torchvision.models import ResNet18_Weights, resnet18
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
 
 BATCH_SIZE = 32
 NUM_EPOCHS = 20
@@ -74,6 +74,10 @@ model = FingerprintLivenessCNN().to(device)
 criterion = nn.BCELoss()
 optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
 
+# Initialize run_id and timestamp for logging
+run_id = str(uuid.uuid4())
+timestamp = datetime.now().isoformat()
+
 # 4. Training loop
 for epoch in range(NUM_EPOCHS):
     model.train()
@@ -91,9 +95,38 @@ for epoch in range(NUM_EPOCHS):
         print(
             f"Epoch [{epoch+1}/{NUM_EPOCHS}] Batch [{batch_count}/{len(train_loader)}] Loss: {loss.item():.4f}"
         )
+    avg_loss = total_loss / len(train_loader)
     print(
-        f"Epoch [{epoch+1}/{NUM_EPOCHS}], Average Loss: {total_loss/len(train_loader):.4f}"
+        f"Epoch [{epoch+1}/{NUM_EPOCHS}], Average Loss: {avg_loss:.4f}"
     )
+    # Log per-epoch BCE to metrics.csv
+    epoch_row = {
+        "run_id": run_id,
+        "epoch": epoch + 1,
+        "timestamp": timestamp,
+        "y_true": '',
+        "y_pred": '',
+        "y_prob": '',
+        "processing_time": '',
+        "accuracy": '',
+        "precision": '',
+        "recall": '',
+        "f1_score": '',
+        "robustness_tnr": '',
+        "bce": avg_loss,
+        "source": 'Standalone',
+    }
+    header = [
+        "run_id", "epoch", "timestamp", "y_true", "y_pred", "y_prob", "processing_time",
+        "accuracy", "precision", "recall", "f1_score", "robustness_tnr", "bce", "source"
+    ]
+    csv_path = "metrics.csv"
+    import pandas as pd
+    epoch_df = pd.DataFrame([epoch_row])
+    if os.path.exists(csv_path):
+        epoch_df.to_csv(csv_path, mode="a", header=False, index=False)
+    else:
+        epoch_df.to_csv(csv_path, header=header, index=False)
 
 # 5. Evaluate and save metrics
 all_labels = []
@@ -129,6 +162,9 @@ accuracy = accuracy_score(all_labels, all_preds)
 precision = precision_score(all_labels, all_preds, zero_division=0)
 recall = recall_score(all_labels, all_preds, zero_division=0)
 f1 = f1_score(all_labels, all_preds, zero_division=0)
+# After calculating all_preds and all_labels, add confusion matrix calculation
+cm = confusion_matrix(all_labels, all_preds)
+cm_flat = cm.flatten() if cm.size == 4 else [0, 0, 0, 0]  # [TN, FP, FN, TP]
 
 metrics_df = pd.DataFrame(
     {
@@ -143,16 +179,21 @@ metrics_df = pd.DataFrame(
         "precision": [precision] * len(all_labels),
         "recall": [recall] * len(all_labels),
         "f1_score": [f1] * len(all_labels),
+        "conf_matrix": [','.join(map(str, cm_flat))] * len(all_labels),
         "source": ['Standalone'] * len(all_labels),
     }
 )
 
 # Append to CSV if exists, else create new
 csv_path = "metrics.csv"
+header = [
+    "run_id", "epoch", "timestamp", "y_true", "y_pred", "y_prob", "processing_time",
+    "accuracy", "precision", "recall", "f1_score", "robustness_tnr", "bce", "conf_matrix", "source"
+]
 if os.path.exists(csv_path):
     metrics_df.to_csv(csv_path, mode="a", header=False, index=False)
 else:
-    metrics_df.to_csv(csv_path, index=False)
+    metrics_df.to_csv(csv_path, header=header, index=False)
 print("Validation metrics appended to metrics.csv")
 
 # 6. Save model
@@ -164,8 +205,21 @@ accuracy = accuracy_score(all_labels, all_preds)
 precision = precision_score(all_labels, all_preds, zero_division=0)
 recall = recall_score(all_labels, all_preds, zero_division=0)
 f1 = f1_score(all_labels, all_preds, zero_division=0)
-
-# Append summary metrics as a special row in metrics.csv
+# Robustness against spoofing (TNR)
+import numpy as np
+all_labels_np = np.array(all_labels)
+all_preds_np = np.array(all_preds)
+tn = ((all_labels_np == 0) & (all_preds_np == 0)).sum()
+fp = ((all_labels_np == 0) & (all_preds_np == 1)).sum()
+tnr = tn / (tn + fp) if (tn + fp) > 0 else 0.0
+# Binary Cross Entropy (BCE)
+if len(all_probs) > 0 and len(all_labels) > 0:
+    bce = nn.BCELoss()(torch.tensor(all_probs), torch.tensor(all_labels)).item()
+    if np.isnan(bce) or np.isinf(bce):
+        bce = 0.0
+else:
+    bce = 0.0
+# In summary row, add conf_matrix
 summary_row = {
     'run_id': run_id,
     'epoch': 'summary',
@@ -177,20 +231,23 @@ summary_row = {
     'precision': precision,
     'recall': recall,
     'f1_score': f1,
-    'source': 'Standalone'
+    'robustness_tnr': tnr,
+    'bce': bce,
+    'conf_matrix': ','.join(map(str, cm_flat)),
+    'source': 'Standalone',
 }
 # Ensure all columns exist in the same order as metrics_df
-all_columns = list(metrics_df.columns) + ['accuracy', 'precision', 'recall', 'f1_score', 'source']
-# Fill missing columns with empty string
+all_columns = list(metrics_df.columns) + ['accuracy', 'precision', 'recall', 'f1_score', 'robustness_tnr', 'bce', 'source']
 for col in all_columns:
     if col not in summary_row:
         summary_row[col] = ''
 summary_row = {k: summary_row[k] for k in all_columns}
 summary_df = pd.DataFrame([summary_row])
+# When writing summary_df, always use the same header
 if os.path.exists(csv_path):
     summary_df.to_csv(csv_path, mode="a", header=False, index=False)
 else:
-    summary_df.to_csv(csv_path, index=False)
+    summary_df.to_csv(csv_path, header=header, index=False)
 print("Summary metrics appended to metrics.csv")
 
 # 7. Fingerrint Prediction

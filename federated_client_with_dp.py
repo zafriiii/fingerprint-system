@@ -14,7 +14,7 @@ from opacus.validators import ModuleValidator
 from torch.utils.data import DataLoader, Subset
 from torchvision import models, transforms
 from torchvision.datasets import ImageFolder
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
 
 
 # Model definition
@@ -83,24 +83,56 @@ class FlowerClientDP(fl.client.NumPyClient):
 
     def fit(self, parameters, config):
         self.set_parameters(parameters)
-        self.base_model.train()
-        total_loss = 0.0
-        for batch_idx, (x, y) in enumerate(self.trainloader):
-            x, y = x, y.float()
-            y = y.unsqueeze(1)
-            self.optimizer.zero_grad()
-            output = self.base_model(x)
-            loss = self.criterion(output, y)
-            loss.backward()
-            self.optimizer.step()
-            total_loss += loss.item()
-            print(
-                f"Batch {batch_idx+1}/{len(self.trainloader)} - Loss: {loss.item():.4f}"
-            )
-        avg_loss = total_loss / len(self.trainloader)
-        print(
-            f"Finished one round with ε = {self.privacy_engine.get_epsilon(1e-5):.2f}, Avg Loss: {avg_loss:.4f}"
-        )
+        num_epochs = 1  # Change this to train for more epochs
+        for epoch in range(1, num_epochs + 1):
+            self.base_model.train()
+            total_loss = 0.0
+            for batch_idx, (x, y) in enumerate(self.trainloader):
+                x, y = x, y.float()
+                y = y.unsqueeze(1)
+                self.optimizer.zero_grad()
+                output = self.base_model(x)
+                loss = self.criterion(output, y)
+                loss.backward()
+                self.optimizer.step()
+                total_loss += loss.item()
+                print(
+                    f"Epoch {epoch} Batch {batch_idx+1}/{len(self.trainloader)} - Loss: {loss.item():.4f}"
+                )
+            avg_loss = total_loss / len(self.trainloader)
+            print(f"Epoch {epoch}, Avg Loss: {avg_loss:.4f}")
+            # Log per-epoch BCE to metrics.csv
+            import uuid
+            from datetime import datetime
+            run_id = getattr(self, 'run_id', str(uuid.uuid4()))
+            timestamp = datetime.now().isoformat()
+            epoch_row = {
+                "run_id": run_id,
+                "epoch": epoch,
+                "timestamp": timestamp,
+                "y_true": '',
+                "y_pred": '',
+                "y_prob": '',
+                "processing_time": '',
+                "accuracy": '',
+                "precision": '',
+                "recall": '',
+                "f1_score": '',
+                "robustness_tnr": '',
+                "bce": avg_loss,
+                "source": 'FL+DP',
+            }
+            header = [
+                "run_id", "epoch", "timestamp", "y_true", "y_pred", "y_prob", "processing_time",
+                "accuracy", "precision", "recall", "f1_score", "robustness_tnr", "bce", "source"
+            ]
+            csv_path = 'metrics.csv'
+            import pandas as pd
+            epoch_df = pd.DataFrame([epoch_row])
+            if os.path.exists(csv_path):
+                epoch_df.to_csv(csv_path, mode='a', header=False, index=False)
+            else:
+                epoch_df.to_csv(csv_path, header=header, index=False)
         return self.get_parameters(config={}), len(self.trainloader.dataset), {}
 
     def evaluate(self, parameters, config):
@@ -130,6 +162,9 @@ class FlowerClientDP(fl.client.NumPyClient):
         from datetime import datetime
         run_id = str(uuid.uuid4())
         timestamp = datetime.now().isoformat()
+        # After all_preds and all_labels are filled in evaluate, add confusion matrix calculation
+        cm = confusion_matrix(all_labels, all_preds)
+        cm_flat = cm.flatten() if cm.size == 4 else [0, 0, 0, 0]  # [TN, FP, FN, TP]
         metrics_df = pd.DataFrame(
             {"y_true": all_labels, "y_pred": all_preds, "y_prob": all_probs, "processing_time": processing_times}
         )
@@ -140,12 +175,17 @@ class FlowerClientDP(fl.client.NumPyClient):
         metrics_df['precision'] = ''
         metrics_df['recall'] = ''
         metrics_df['f1_score'] = ''
+        metrics_df['conf_matrix'] = ','.join(map(str, cm_flat))
         metrics_df['source'] = 'FL+DP'
         csv_path = 'metrics.csv'
+        header = [
+            "run_id", "epoch", "timestamp", "y_true", "y_pred", "y_prob", "processing_time",
+            "accuracy", "precision", "recall", "f1_score", "robustness_tnr", "bce", "conf_matrix", "source"
+        ]
         if os.path.exists(csv_path):
             metrics_df.to_csv(csv_path, mode='a', header=False, index=False)
         else:
-            metrics_df.to_csv(csv_path, index=False)
+            metrics_df.to_csv(csv_path, header=header, index=False)
         print('Federated validation metrics appended to metrics.csv')
         # Save summary metrics as a special row in metrics.csv
         accuracy = accuracy_score(all_labels, all_preds)
@@ -153,11 +193,19 @@ class FlowerClientDP(fl.client.NumPyClient):
         recall = recall_score(all_labels, all_preds, zero_division=0)
         f1 = f1_score(all_labels, all_preds, zero_division=0)
         # Robustness against spoofing (TNR)
-        tn = ((np.array(all_labels) == 0) & (np.array(all_preds) == 0)).sum()
-        fp = ((np.array(all_labels) == 0) & (np.array(all_preds) == 1)).sum()
+        import numpy as np
+        all_labels_np = np.array(all_labels)
+        all_preds_np = np.array(all_preds)
+        tn = ((all_labels_np == 0) & (all_preds_np == 0)).sum()
+        fp = ((all_labels_np == 0) & (all_preds_np == 1)).sum()
         tnr = tn / (tn + fp) if (tn + fp) > 0 else 0.0
         # Binary Cross Entropy (BCE)
-        bce = nn.BCELoss()(torch.tensor(all_probs), torch.tensor(all_labels)).item()
+        if len(all_probs) > 0 and len(all_labels) > 0:
+            bce = nn.BCELoss()(torch.tensor(all_probs), torch.tensor(all_labels)).item()
+            if np.isnan(bce) or np.isinf(bce):
+                bce = 0.0
+        else:
+            bce = 0.0
         summary_row = {
             'run_id': run_id,
             'epoch': 'summary',
@@ -171,6 +219,7 @@ class FlowerClientDP(fl.client.NumPyClient):
             'f1_score': f1,
             'robustness_tnr': tnr,
             'bce': bce,
+            'conf_matrix': ','.join(map(str, cm_flat)),
             'source': 'FL+DP'
         }
         # Ensure all columns exist in the same order as metrics_df
@@ -183,7 +232,7 @@ class FlowerClientDP(fl.client.NumPyClient):
         if os.path.exists(csv_path):
             summary_df.to_csv(csv_path, mode='a', header=False, index=False)
         else:
-            summary_df.to_csv(csv_path, index=False)
+            summary_df.to_csv(csv_path, header=header, index=False)
         print('Summary metrics appended to metrics.csv')
         return 0.0, len(self.trainloader.dataset), {}
 
