@@ -1,18 +1,20 @@
 # client_dp.py (Federated client with Differential Privacy using Flower + Opacus)
 
+import os
+import random
+
 import flwr as fl
+import numpy as np
+import pandas as pd
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torchvision import models, transforms
-from torch.utils.data import DataLoader, Subset
-from torchvision.datasets import ImageFolder
 from opacus import PrivacyEngine
 from opacus.validators import ModuleValidator
-import os
-import numpy as np
-import random
-import pandas as pd
+from torch.utils.data import DataLoader, Subset
+from torchvision import models, transforms
+from torchvision.datasets import ImageFolder
+
 
 # Model definition
 class FingerprintModel(nn.Module):
@@ -26,22 +28,26 @@ class FingerprintModel(nn.Module):
             nn.ReLU(),
             nn.Dropout(0.3),
             nn.Linear(256, 1),
-            nn.Sigmoid()
+            nn.Sigmoid(),
         )
         self.base_model = base
 
     def forward(self, x):
         return self.base_model(x)
 
+
 # Load a small portion of the dataset
 def load_data():
-    transform = transforms.Compose([
-        transforms.Resize((224, 224)),
-        transforms.ToTensor(),
-    ])
+    transform = transforms.Compose(
+        [
+            transforms.Resize((224, 224)),
+            transforms.ToTensor(),
+        ]
+    )
     dataset = ImageFolder("data/train", transform=transform)
     indices = random.sample(range(len(dataset)), k=int(0.2 * len(dataset)))
     return DataLoader(Subset(dataset, indices), batch_size=16, shuffle=True)
+
 
 # Flower client with DP
 class FlowerClientDP(fl.client.NumPyClient):
@@ -54,14 +60,16 @@ class FlowerClientDP(fl.client.NumPyClient):
         self.base_model = ModuleValidator.fix(self.base_model)
         self.optimizer = optim.Adam(self.base_model.parameters(), lr=1e-4)
         self.privacy_engine = PrivacyEngine()
-        self.base_model, self.optimizer, self.trainloader = self.privacy_engine.make_private_with_epsilon(
-            module=self.base_model,
-            optimizer=self.optimizer,
-            data_loader=self.trainloader,
-            target_epsilon=5.0,
-            target_delta=1e-5,
-            epochs=1,
-            max_grad_norm=1.0,
+        self.base_model, self.optimizer, self.trainloader = (
+            self.privacy_engine.make_private_with_epsilon(
+                module=self.base_model,
+                optimizer=self.optimizer,
+                data_loader=self.trainloader,
+                target_epsilon=5.0,
+                target_delta=1e-5,
+                epochs=1,
+                max_grad_norm=1.0,
+            )
         )
 
     def get_parameters(self, config):
@@ -85,9 +93,13 @@ class FlowerClientDP(fl.client.NumPyClient):
             loss.backward()
             self.optimizer.step()
             total_loss += loss.item()
-            print(f"Batch {batch_idx+1}/{len(self.trainloader)} - Loss: {loss.item():.4f}")
+            print(
+                f"Batch {batch_idx+1}/{len(self.trainloader)} - Loss: {loss.item():.4f}"
+            )
         avg_loss = total_loss / len(self.trainloader)
-        print(f"Finished one round with ε = {self.privacy_engine.get_epsilon(1e-5):.2f}, Avg Loss: {avg_loss:.4f}")
+        print(
+            f"Finished one round with ε = {self.privacy_engine.get_epsilon(1e-5):.2f}, Avg Loss: {avg_loss:.4f}"
+        )
         return self.get_parameters(config={}), len(self.trainloader.dataset), {}
 
     def evaluate(self, parameters, config):
@@ -107,17 +119,22 @@ class FlowerClientDP(fl.client.NumPyClient):
                 all_labels.extend(y.cpu().numpy())
                 all_probs.extend(probs)
         # Save to CSV
-        metrics_df = pd.DataFrame({'y_true': all_labels, 'y_pred': all_preds, 'y_prob': all_probs})
-        metrics_df.to_csv('metrics.csv', index=False)
+        metrics_df = pd.DataFrame(
+            {"y_true": all_labels, "y_pred": all_preds, "y_prob": all_probs}
+        )
+        metrics_df.to_csv("metrics.csv", index=False)
         print("Federated validation metrics saved to metrics.csv")
         return 0.0, len(self.trainloader.dataset), {}
+
 
 # Launch client
 if __name__ == "__main__":
     model = FingerprintModel()
     # Load pretrained weights if available
     if os.path.exists("liveness_model.pth"):
-        model.load_state_dict(torch.load("liveness_model.pth", map_location=torch.device('cpu')))
+        model.load_state_dict(
+            torch.load("liveness_model.pth", map_location=torch.device("cpu"))
+        )
         print("Loaded pretrained weights from liveness_model.pth")
     else:
         print("No pretrained weights found, starting from scratch.")
@@ -134,4 +151,6 @@ if __name__ == "__main__":
         f.write(f"Date: {__import__('datetime').datetime.now()}\n")
         f.write("DP parameters: epsilon=5.0, delta=1e-5, max_grad_norm=1.0\n")
         f.write("Frameworks: Flower, Opacus, PyTorch\n")
-        f.write("Note: This file is automatically generated after federated training.\n")
+        f.write(
+            "Note: This file is automatically generated after federated training.\n"
+        )

@@ -2,10 +2,12 @@
 
 import flwr as fl
 
+
 class NoEvalFedAvg(fl.server.strategy.FedAvg):
     def configure_evaluate(self, server_round, parameters, client_manager):
         # Disable evaluation by returning an empty list
         return []
+
 
 # Start Flower server
 fl.server.start_server(

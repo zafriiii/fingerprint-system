@@ -1,19 +1,21 @@
+import os
+import uuid
+from datetime import datetime
+
+import pandas as pd
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 from torchvision.datasets import ImageFolder
-from torchvision.models import resnet18, ResNet18_Weights
-import os
-import pandas as pd
-import uuid
-from datetime import datetime
+from torchvision.models import ResNet18_Weights, resnet18
 
 BATCH_SIZE = 32
-NUM_EPOCHS = 20 
+NUM_EPOCHS = 20
 LEARNING_RATE = 1e-4
 IMAGE_SIZE = 224
+
 
 # 1. CNN model using ResNet18
 class FingerprintLivenessCNN(nn.Module):
@@ -27,37 +29,46 @@ class FingerprintLivenessCNN(nn.Module):
             nn.ReLU(),
             nn.Dropout(0.3),
             nn.Linear(256, 1),
-            nn.Sigmoid()
+            nn.Sigmoid(),
         )
 
     def forward(self, x):
         return self.base_model(x)
 
-# 2. Dataset and transforms
-train_transform = transforms.Compose([
-    transforms.Resize((IMAGE_SIZE, IMAGE_SIZE)),
-    transforms.ColorJitter(brightness=0.3, contrast=0.3),
-    transforms.RandomRotation(15),
-    transforms.RandomHorizontalFlip(),
-    transforms.ToTensor(),
-])
 
-val_transform = transforms.Compose([
-    transforms.Resize((IMAGE_SIZE, IMAGE_SIZE)),
-    transforms.ToTensor(),
-])
+# 2. Dataset and transforms
+train_transform = transforms.Compose(
+    [
+        transforms.Resize((IMAGE_SIZE, IMAGE_SIZE)),
+        transforms.ColorJitter(brightness=0.3, contrast=0.3),
+        transforms.RandomRotation(15),
+        transforms.RandomHorizontalFlip(),
+        transforms.ToTensor(),
+    ]
+)
+
+val_transform = transforms.Compose(
+    [
+        transforms.Resize((IMAGE_SIZE, IMAGE_SIZE)),
+        transforms.ToTensor(),
+    ]
+)
 
 # Dataset path
-dataset_path = 'data'
+dataset_path = "data"
 
-train_dataset = ImageFolder(root=os.path.join(dataset_path, 'train'), transform=train_transform)
-val_dataset = ImageFolder(root=os.path.join(dataset_path, 'val'), transform=val_transform)
+train_dataset = ImageFolder(
+    root=os.path.join(dataset_path, "train"), transform=train_transform
+)
+val_dataset = ImageFolder(
+    root=os.path.join(dataset_path, "val"), transform=val_transform
+)
 
 train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
 val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False)
 
 # 3. Model, Loss, Optimizer
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model = FingerprintLivenessCNN().to(device)
 criterion = nn.BCELoss()
 optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
@@ -76,8 +87,12 @@ for epoch in range(NUM_EPOCHS):
         optimizer.step()
         total_loss += loss.item()
         batch_count += 1
-        print(f"Epoch [{epoch+1}/{NUM_EPOCHS}] Batch [{batch_count}/{len(train_loader)}] Loss: {loss.item():.4f}")
-    print(f"Epoch [{epoch+1}/{NUM_EPOCHS}], Average Loss: {total_loss/len(train_loader):.4f}")
+        print(
+            f"Epoch [{epoch+1}/{NUM_EPOCHS}] Batch [{batch_count}/{len(train_loader)}] Loss: {loss.item():.4f}"
+        )
+    print(
+        f"Epoch [{epoch+1}/{NUM_EPOCHS}], Average Loss: {total_loss/len(train_loader):.4f}"
+    )
 
 # 5. Evaluate and save metrics
 all_labels = []
@@ -100,19 +115,21 @@ with torch.no_grad():
         all_epochs.extend([NUM_EPOCHS] * len(labels))
 
 # Prepare DataFrame with extra columns
-metrics_df = pd.DataFrame({
-    'run_id': [run_id] * len(all_labels),
-    'epoch': all_epochs,
-    'timestamp': [timestamp] * len(all_labels),
-    'y_true': all_labels,
-    'y_pred': all_preds,
-    'y_prob': all_probs
-})
+metrics_df = pd.DataFrame(
+    {
+        "run_id": [run_id] * len(all_labels),
+        "epoch": all_epochs,
+        "timestamp": [timestamp] * len(all_labels),
+        "y_true": all_labels,
+        "y_pred": all_preds,
+        "y_prob": all_probs,
+    }
+)
 
 # Append to CSV if exists, else create new
-csv_path = 'metrics.csv'
+csv_path = "metrics.csv"
 if os.path.exists(csv_path):
-    metrics_df.to_csv(csv_path, mode='a', header=False, index=False)
+    metrics_df.to_csv(csv_path, mode="a", header=False, index=False)
 else:
     metrics_df.to_csv(csv_path, index=False)
 print("Validation metrics appended to metrics.csv")
@@ -121,9 +138,11 @@ print("Validation metrics appended to metrics.csv")
 torch.save(model.state_dict(), "liveness_model.pth")
 print("Model saved as liveness_model.pth")
 
+
 # 7. Fingerrint Prediction
 def predict_single_image(image_path):
     import cv2
+
     model.eval()
     img = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
     img = cv2.resize(img, (IMAGE_SIZE, IMAGE_SIZE))

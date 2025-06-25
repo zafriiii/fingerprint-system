@@ -1,19 +1,21 @@
-
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import DataLoader
-from torchvision import models, datasets, transforms
 from opacus import PrivacyEngine
+from torch.utils.data import DataLoader
+from torchvision import datasets, models, transforms
 
 # Load dataset
-transform = transforms.Compose([
-    transforms.Resize((224, 224)),
-    transforms.ToTensor(),
-])
+transform = transforms.Compose(
+    [
+        transforms.Resize((224, 224)),
+        transforms.ToTensor(),
+    ]
+)
 
-train_dataset = datasets.ImageFolder('path_to_dataset/train', transform=transform)
+train_dataset = datasets.ImageFolder("path_to_dataset/train", transform=transform)
 train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
+
 
 # Model
 class FingerprintModel(nn.Module):
@@ -27,12 +29,13 @@ class FingerprintModel(nn.Module):
             nn.ReLU(),
             nn.Dropout(0.3),
             nn.Linear(256, 1),
-            nn.Sigmoid()
+            nn.Sigmoid(),
         )
         self.model = base
 
     def forward(self, x):
         return self.model(x)
+
 
 # Training setup
 model = FingerprintModel()
@@ -41,6 +44,7 @@ criterion = nn.BCELoss()
 
 # Integrate Opacus
 from opacus.validators import ModuleValidator
+
 model = ModuleValidator.fix(model)
 privacy_engine = PrivacyEngine()
 

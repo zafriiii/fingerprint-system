@@ -1,11 +1,15 @@
 import cv2
 import torch
 import torchvision.transforms as transforms
-from liveness_detection_model import FingerprintLivenessCNN
+
 from fingerprint_matcher import match_fingerprints
-from performance_metrics import calculate_metrics, get_confusion_matrix, robustness_against_spoofing, binary_cross_entropy
+from liveness_detection_model import FingerprintLivenessCNN
+from performance_metrics import (binary_cross_entropy, calculate_metrics,
+                                 get_confusion_matrix,
+                                 robustness_against_spoofing)
 
 IMAGE_SIZE = 224
+
 
 def preprocess_image(image_path):
     img = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
@@ -16,6 +20,7 @@ def preprocess_image(image_path):
     tensor = torch.tensor(img).unsqueeze(0).unsqueeze(0).float()
     return tensor
 
+
 def check_liveness(model, tensor):
     model.eval()
     with torch.no_grad():
@@ -23,6 +28,7 @@ def check_liveness(model, tensor):
         prob = output.item()
         print(f"Liveness score: {prob:.4f}")
         return "Live" if prob > 0.45 else "Spoof"
+
 
 def evaluate_performance(y_true, y_pred, y_prob=None):
     metrics = calculate_metrics(y_true, y_pred)
@@ -32,9 +38,12 @@ def evaluate_performance(y_true, y_pred, y_prob=None):
     if y_prob is not None:
         print("Binary Cross Entropy:", binary_cross_entropy(y_true, y_prob))
 
+
 if __name__ == "__main__":
     live_model = FingerprintLivenessCNN()
-    live_model.load_state_dict(torch.load("liveness_model.pth", map_location=torch.device('cpu')))
+    live_model.load_state_dict(
+        torch.load("liveness_model.pth", map_location=torch.device("cpu"))
+    )
 
     fingerprint_path = "test_input.png"
     enrolled_path = "enrolled_template.png"

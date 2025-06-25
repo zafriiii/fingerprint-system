@@ -1,13 +1,15 @@
+import os
+import random
+
 import flwr as fl
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torchvision import models, transforms
 from torch.utils.data import DataLoader, Subset
+from torchvision import models, transforms
 from torchvision.datasets import ImageFolder
-import os
-import numpy as np
-import random
+
 
 # Simple ResNet18 model
 class FingerprintModel(nn.Module):
@@ -21,22 +23,26 @@ class FingerprintModel(nn.Module):
             nn.ReLU(),
             nn.Dropout(0.3),
             nn.Linear(256, 1),
-            nn.Sigmoid()
+            nn.Sigmoid(),
         )
         self.model = base
 
     def forward(self, x):
         return self.model(x)
 
+
 # Load a portion of dataset for simulation
 def load_data():
-    transform = transforms.Compose([
-        transforms.Resize((224, 224)),
-        transforms.ToTensor(),
-    ])
+    transform = transforms.Compose(
+        [
+            transforms.Resize((224, 224)),
+            transforms.ToTensor(),
+        ]
+    )
     dataset = ImageFolder("path_to_dataset/train", transform=transform)
     indices = random.sample(range(len(dataset)), k=int(0.2 * len(dataset)))
     return DataLoader(Subset(dataset, indices), batch_size=16, shuffle=True)
+
 
 # Flower client
 class FlowerClient(fl.client.NumPyClient):
@@ -71,6 +77,7 @@ class FlowerClient(fl.client.NumPyClient):
     def evaluate(self, parameters, config):
         self.set_parameters(parameters)
         return 0.0, len(self.trainloader.dataset), {}
+
 
 # Launch Flower client
 if __name__ == "__main__":
