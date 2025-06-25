@@ -4,13 +4,12 @@ import tensorflow as tf
 from tensorflow.keras.applications import MobileNetV2  # type: ignore
 from tensorflow.keras.layers import Dense, Dropout  # type: ignore
 from tensorflow.keras.models import Sequential  # type: ignore
-from tensorflow.keras.preprocessing.image import \
-    ImageDataGenerator  # type: ignore
+from tensorflow.keras import ImageDataGenerator  # type: ignore
 
 # Configuration
 BATCH_SIZE = 32
 IMG_SIZE = (224, 224)
-EPOCHS = 100
+EPOCHS = 20
 
 # Dataset path
 dataset_path = "data"
