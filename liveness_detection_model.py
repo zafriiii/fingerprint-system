@@ -13,7 +13,7 @@ from torchvision.models import ResNet18_Weights, resnet18
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
 
 BATCH_SIZE = 32
-NUM_EPOCHS = 1
+NUM_EPOCHS = 25
 LEARNING_RATE = 1e-4
 IMAGE_SIZE = 224
 
