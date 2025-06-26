@@ -12,7 +12,7 @@ from torchvision.datasets import ImageFolder
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
 
 BATCH_SIZE = 32
-NUM_EPOCHS = 25
+NUM_EPOCHS = 30
 LEARNING_RATE = 1e-3  # Increased from 1e-4 to 1e-3 for faster convergence
 IMAGE_SIZE = 224
 
@@ -132,7 +132,7 @@ if __name__ == "__main__":
     # 4. Training loop with early stopping
     best_val_loss = float('inf')
     early_stop_counter = 0
-    early_stop_patience = 7  # Stop if no improvement for 7 epochs
+    early_stop_patience = 20  # Stop if no improvement for 20 epochs
 
     for epoch in range(NUM_EPOCHS):
         model.train()

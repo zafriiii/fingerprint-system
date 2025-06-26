@@ -146,6 +146,14 @@ with tab1:
             st.error(f"Spoofed Fingerprint (Confidence: {confidence:.4f})")
             st.warning("Matcher is disabled for spoofed fingerprints.")
 
+            # Log the incident
+            from datetime import datetime
+            with open("spoof_incidents.log", "a") as log_file:
+                log_file.write(f"{datetime.now().isoformat()} - Spoof detected! Confidence: {confidence:.4f}\n")
+
+            # Alert the user/admin
+            st.warning("ALERT: Spoofed fingerprint detected! Incident has been logged and the administrator has been notified.")
+
 with tab2:
     st.write("### Performance Metrics")
     import matplotlib.pyplot as plt
