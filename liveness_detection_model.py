@@ -6,10 +6,9 @@ import pandas as pd
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader
 from torchvision import transforms
 from torchvision.datasets import ImageFolder
-from torchvision.models import ResNet18_Weights, resnet18
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
 
 BATCH_SIZE = 32
@@ -17,22 +16,42 @@ NUM_EPOCHS = 25
 LEARNING_RATE = 1e-3  # Increased from 1e-4 to 1e-3 for faster convergence
 IMAGE_SIZE = 224
 
+# --- Model and augmentation must match federated_client_with_dp.py for compatibility ---
+from torchvision.models.resnet import ResNet, BasicBlock
 
-# 1. CNN model using ResNet18
+class PatchedBasicBlock(BasicBlock):
+    def forward(self, x):
+        identity = x
+        out = self.conv1(x)
+        out = self.bn1(out)
+        out = self.relu(out)
+        out = self.conv2(out)
+        out = self.bn2(out)
+        if self.downsample is not None:
+            identity = self.downsample(x)
+        out = out + identity
+        out = self.relu(out)
+        return out
+
+def patched_resnet18():
+    return ResNet(block=PatchedBasicBlock, layers=[2, 2, 2, 2])
+
 class FingerprintLivenessCNN(nn.Module):
     def __init__(self):
         super(FingerprintLivenessCNN, self).__init__()
-        # Load pre-trained ResNet18
-        self.resnet = resnet18(weights=ResNet18_Weights.DEFAULT)
-        
-        # Unfreeze the last 2 layers of ResNet
+        self.resnet = patched_resnet18()
+        # Load weights from torchvision's resnet18 if available
+        try:
+            from torchvision import models
+            state_dict = models.resnet18(weights=models.ResNet18_Weights.DEFAULT).state_dict()
+            self.resnet.load_state_dict(state_dict, strict=False)
+        except Exception as e:
+            print(f"Warning: Could not load pretrained weights: {e}")
         for name, param in self.resnet.named_parameters():
             if "layer4" in name or "layer3" in name:
                 param.requires_grad = True
             else:
                 param.requires_grad = False
-        
-        # Modify the classifier with additional layers and batch normalization
         self.classifier = nn.Sequential(
             nn.Linear(1000, 512),
             nn.BatchNorm1d(512),
@@ -44,6 +63,13 @@ class FingerprintLivenessCNN(nn.Module):
             nn.Dropout(0.3),
             nn.Linear(256, 1)
         )
+        self._set_relu_inplace(self.resnet)
+        self._set_relu_inplace(self.classifier)
+
+    def _set_relu_inplace(self, module):
+        for m in module.modules():
+            if isinstance(m, nn.ReLU):
+                m.inplace = False
 
     def forward(self, x):
         x = self.resnet(x)
@@ -52,22 +78,18 @@ class FingerprintLivenessCNN(nn.Module):
 
 
 # 2. Dataset and transforms
-train_transform = transforms.Compose(
-    [
-        transforms.Resize((IMAGE_SIZE, IMAGE_SIZE)),
-        transforms.ColorJitter(brightness=0.3, contrast=0.3),
-        transforms.RandomRotation(15),
-        transforms.RandomHorizontalFlip(),
-        transforms.ToTensor(),
-    ]
-)
-
-val_transform = transforms.Compose(
-    [
-        transforms.Resize((IMAGE_SIZE, IMAGE_SIZE)),
-        transforms.ToTensor(),
-    ]
-)
+train_transform = transforms.Compose([
+    transforms.Resize((IMAGE_SIZE, IMAGE_SIZE)),
+    transforms.ColorJitter(brightness=0.3, contrast=0.3),
+    transforms.RandomResizedCrop(IMAGE_SIZE, scale=(0.8, 1.0)),
+    transforms.RandomRotation(10),
+    transforms.RandomHorizontalFlip(),
+    transforms.ToTensor(),
+])
+val_transform = transforms.Compose([
+    transforms.Resize((IMAGE_SIZE, IMAGE_SIZE)),
+    transforms.ToTensor(),
+])
 
 # Dataset path
 dataset_path = "data"

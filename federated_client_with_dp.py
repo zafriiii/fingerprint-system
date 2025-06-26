@@ -77,14 +77,19 @@ class FingerprintLivenessCNN(nn.Module):
         return torch.sigmoid(x)
 
 
-# Load a small portion of the dataset
+# --- Model and augmentation must match liveness_detection_model.py for compatibility ---
+# (PatchedBasicBlock, patched_resnet18, and FingerprintLivenessCNN already present)
+# Update data augmentation for better robustness
+
 def load_data():
-    transform = transforms.Compose(
-        [
-            transforms.Resize((224, 224)),
-            transforms.ToTensor(),
-        ]
-    )
+    transform = transforms.Compose([
+        transforms.Resize((224, 224)),
+        transforms.ColorJitter(brightness=0.3, contrast=0.3),
+        transforms.RandomResizedCrop(224, scale=(0.8, 1.0)),
+        transforms.RandomRotation(10),
+        transforms.RandomHorizontalFlip(),
+        transforms.ToTensor(),
+    ])
     dataset = ImageFolder("data/train", transform=transform)
     indices = random.sample(range(len(dataset)), k=int(0.2 * len(dataset)))
     return DataLoader(Subset(dataset, indices), batch_size=16, shuffle=True)
