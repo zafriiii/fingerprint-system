@@ -15,26 +15,66 @@ from torch.utils.data import DataLoader, Subset
 from torchvision import models, transforms
 from torchvision.datasets import ImageFolder
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
+from torchvision.models.resnet import ResNet, BasicBlock
 
+# --- Static patch: Custom BasicBlock with non-inplace addition for Opacus compatibility ---
+class PatchedBasicBlock(BasicBlock):
+    def forward(self, x):
+        identity = x
+        out = self.conv1(x)
+        out = self.bn1(out)
+        out = self.relu(out)
+        out = self.conv2(out)
+        out = self.bn2(out)
+        if self.downsample is not None:
+            identity = self.downsample(x)
+        out = out + identity  # Not in-place
+        out = self.relu(out)
+        return out
 
-# Model definition
-class FingerprintModel(nn.Module):
+def patched_resnet18():
+    # Use our PatchedBasicBlock
+    return ResNet(block=PatchedBasicBlock, layers=[2, 2, 2, 2])
+
+# Model definition (must match liveness_detection_model.py)
+class FingerprintLivenessCNN(nn.Module):
     def __init__(self):
-        super(FingerprintModel, self).__init__()
-        base = models.resnet18(pretrained=True)
-        for param in base.parameters():
-            param.requires_grad = False
-        base.fc = nn.Sequential(
-            nn.Linear(base.fc.in_features, 256),
+        super(FingerprintLivenessCNN, self).__init__()
+        self.resnet = patched_resnet18()  # No pretrained weights for custom block
+        # Load weights from torchvision's resnet18 if available
+        try:
+            state_dict = models.resnet18(weights=models.ResNet18_Weights.DEFAULT).state_dict()
+            self.resnet.load_state_dict(state_dict, strict=False)
+        except Exception as e:
+            print(f"Warning: Could not load pretrained weights: {e}")
+        for name, param in self.resnet.named_parameters():
+            if "layer4" in name or "layer3" in name:
+                param.requires_grad = True
+            else:
+                param.requires_grad = False
+        self.classifier = nn.Sequential(
+            nn.Linear(1000, 512),
+            nn.BatchNorm1d(512),
+            nn.ReLU(),
+            nn.Dropout(0.5),
+            nn.Linear(512, 256),
+            nn.BatchNorm1d(256),
             nn.ReLU(),
             nn.Dropout(0.3),
-            nn.Linear(256, 1),
-            nn.Sigmoid(),
+            nn.Linear(256, 1)
         )
-        self.base_model = base
+        self._set_relu_inplace(self.resnet)
+        self._set_relu_inplace(self.classifier)
+
+    def _set_relu_inplace(self, module):
+        for m in module.modules():
+            if isinstance(m, nn.ReLU):
+                m.inplace = False
 
     def forward(self, x):
-        return self.base_model(x)
+        x = self.resnet(x)
+        x = self.classifier(x)
+        return torch.sigmoid(x)
 
 
 # Load a small portion of the dataset
@@ -69,12 +109,10 @@ def write_metrics_row(row, csv_path):
 # Flower client with DP
 class FlowerClientDP(fl.client.NumPyClient):
     def __init__(self, model, trainloader):
+        model = ModuleValidator.fix_and_validate(model)
         self.base_model = model
         self.trainloader = trainloader
         self.criterion = nn.BCELoss()
-
-        # Make model DP-compatible
-        self.base_model = ModuleValidator.fix(self.base_model)
         self.optimizer = optim.Adam(self.base_model.parameters(), lr=1e-4)
         self.privacy_engine = PrivacyEngine()
         self.base_model, self.optimizer, self.trainloader = (
@@ -99,7 +137,7 @@ class FlowerClientDP(fl.client.NumPyClient):
 
     def fit(self, parameters, config):
         self.set_parameters(parameters)
-        num_epochs = 1  # Change this to train for more epochs
+        num_epochs = 3  # Change this to train for more epochs
         for epoch in range(1, num_epochs + 1):
             self.base_model.train()
             total_loss = 0.0
@@ -245,24 +283,31 @@ class FlowerClientDP(fl.client.NumPyClient):
 
 # Launch client
 if __name__ == "__main__":
-    model = FingerprintModel()
-    # Load pretrained weights if available
-    if os.path.exists("liveness_model.pth"):
+    # Always prefer the best model if available
+    if os.path.exists("liveness_model_best.pth"):
+        model = FingerprintLivenessCNN()
         model.load_state_dict(
-            torch.load("liveness_model.pth", map_location=torch.device("cpu"))
+            torch.load("liveness_model_best.pth", map_location=torch.device("cpu"))
         )
-        print("Loaded pretrained weights from liveness_model.pth")
+        print("Loaded best model weights from liveness_model_best.pth")
+    elif os.path.exists("liveness_model_best.pth"):
+        model = FingerprintLivenessCNN()
+        model.load_state_dict(
+            torch.load("liveness_model_best.pth", map_location=torch.device("cpu"))
+        )
+        print("Loaded latest model weights from liveness_model_best.pth")
     else:
+        model = FingerprintLivenessCNN()
         print("No pretrained weights found, starting from scratch.")
     trainloader = load_data()
     client = FlowerClientDP(model, trainloader)
     fl.client.start_numpy_client(server_address="localhost:8080", client=client)
     # Save the updated model after federated training
-    torch.save(model.state_dict(), "liveness_model.pth")
-    print("Updated model saved as liveness_model.pth")
+    torch.save(model.state_dict(), "liveness_model_best.pth")
+    print("Updated model saved as liveness_model_best.pth")
     # Save provenance file
     with open("model_provenance.txt", "w") as f:
-        f.write("Model: liveness_model.pth\n")
+        f.write("Model: liveness_model_best.pth\n")
         f.write("Trained with: Federated Learning + Differential Privacy (Opacus)\n")
         f.write(f"Date: {__import__('datetime').datetime.now()}\n")
         f.write("DP parameters: epsilon=5.0, delta=1e-5, max_grad_norm=1.0\n")

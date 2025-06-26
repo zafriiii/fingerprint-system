@@ -12,28 +12,71 @@ from performance_metrics import (binary_cross_entropy, calculate_metrics,
                                  robustness_against_spoofing)
 
 # Configuration
-MODEL_PATH = "liveness_model.pth"
+MODEL_PATH = "liveness_model_best.pth"
 IMAGE_SIZE = 224
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 # Load Model
+from torchvision.models.resnet import ResNet, BasicBlock
+from torchvision import models
+
+# --- Static patch: Custom BasicBlock with non-inplace addition for Opacus compatibility ---
+class PatchedBasicBlock(BasicBlock):
+    def forward(self, x):
+        identity = x
+        out = self.conv1(x)
+        out = self.bn1(out)
+        out = self.relu(out)
+        out = self.conv2(out)
+        out = self.bn2(out)
+        if self.downsample is not None:
+            identity = self.downsample(x)
+        out = out + identity  # Not in-place
+        out = self.relu(out)
+        return out
+
+def patched_resnet18():
+    return ResNet(block=PatchedBasicBlock, layers=[2, 2, 2, 2])
+
 class FingerprintLivenessCNN(nn.Module):
     def __init__(self):
         super(FingerprintLivenessCNN, self).__init__()
-        from torchvision import models
-
-        self.base_model = models.resnet18(pretrained=False)
-        self.base_model.fc = nn.Sequential(
-            nn.Linear(self.base_model.fc.in_features, 256),
+        self.resnet = patched_resnet18()
+        # Load weights from torchvision's resnet18 if available
+        try:
+            state_dict = models.resnet18(weights=models.ResNet18_Weights.DEFAULT).state_dict()
+            self.resnet.load_state_dict(state_dict, strict=False)
+        except Exception as e:
+            print(f"Warning: Could not load pretrained weights: {e}")
+        for name, param in self.resnet.named_parameters():
+            if "layer4" in name or "layer3" in name:
+                param.requires_grad = True
+            else:
+                param.requires_grad = False
+        self.classifier = nn.Sequential(
+            nn.Linear(1000, 512),
+            nn.BatchNorm1d(512),
+            nn.ReLU(),
+            nn.Dropout(0.5),
+            nn.Linear(512, 256),
+            nn.BatchNorm1d(256),
             nn.ReLU(),
             nn.Dropout(0.3),
-            nn.Linear(256, 1),
-            nn.Sigmoid(),
+            nn.Linear(256, 1)
         )
+        self._set_relu_inplace(self.resnet)
+        self._set_relu_inplace(self.classifier)
+
+    def _set_relu_inplace(self, module):
+        for m in module.modules():
+            if isinstance(m, nn.ReLU):
+                m.inplace = False
 
     def forward(self, x):
-        return self.base_model(x)
+        x = self.resnet(x)
+        x = self.classifier(x)
+        return torch.sigmoid(x)
 
 
 @st.cache_resource
