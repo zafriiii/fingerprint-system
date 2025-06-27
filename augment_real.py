@@ -4,12 +4,12 @@ from pathlib import Path
 from PIL import Image
 from torchvision import transforms
 
-# Input/output folders
-input_dir = "data/train/0_live"
-output_dir = "data_augmented/train/0_live"
+# Set input and output folders
+input_dir = "realval"
+output_dir = "data_augmented/realval"
 os.makedirs(output_dir, exist_ok=True)
 
-# Augmentation transforms
+# Set up image augmentations
 transform_ops = transforms.Compose(
     [
         transforms.RandomRotation(15),
@@ -19,17 +19,17 @@ transform_ops = transforms.Compose(
     ]
 )
 
-# Target number of images
-TARGET_COUNT = 17407
+# Set how many images we want
+TARGET_COUNT = 5224
 
-# Get list of input images
+# Get all input image file names
 input_files = [
     f
     for f in os.listdir(input_dir)
     if f.lower().endswith((".png", ".jpg", ".jpeg", ".tif"))
 ]
 
-# Count current images in output_dir
+# Count how many images are already in the output folder
 existing_augmented = len(
     [
         f
@@ -38,7 +38,7 @@ existing_augmented = len(
     ]
 )
 
-# Augment until reaching TARGET_COUNT
+# Make new images until we reach the target number
 idx = 0
 aug_idx = 0
 while existing_augmented < TARGET_COUNT:

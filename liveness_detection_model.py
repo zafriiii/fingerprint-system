@@ -12,11 +12,11 @@ from torchvision.datasets import ImageFolder
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
 
 BATCH_SIZE = 32
-NUM_EPOCHS = 30
-LEARNING_RATE = 1e-3  # Increased from 1e-4 to 1e-3 for faster convergence
+NUM_EPOCHS = 20
+LEARNING_RATE = 1e-4  
 IMAGE_SIZE = 224
 
-# --- Model and augmentation must match federated_client_with_dp.py for compatibility ---
+# This model and augmentations must be the same as in federated_client_with_dp.py
 from torchvision.models.resnet import ResNet, BasicBlock
 
 class PatchedBasicBlock(BasicBlock):
@@ -40,7 +40,7 @@ class FingerprintLivenessCNN(nn.Module):
     def __init__(self):
         super(FingerprintLivenessCNN, self).__init__()
         self.resnet = patched_resnet18()
-        # Load weights from torchvision's resnet18 if available
+        # Try to load pretrained weights
         try:
             from torchvision import models
             state_dict = models.resnet18(weights=models.ResNet18_Weights.DEFAULT).state_dict()
@@ -76,8 +76,7 @@ class FingerprintLivenessCNN(nn.Module):
         x = self.classifier(x)
         return torch.sigmoid(x)
 
-
-# 2. Dataset and transforms
+# Set up training and validation image transforms
 train_transform = transforms.Compose([
     transforms.Resize((IMAGE_SIZE, IMAGE_SIZE)),
     transforms.ColorJitter(brightness=0.3, contrast=0.3),
@@ -91,7 +90,7 @@ val_transform = transforms.Compose([
     transforms.ToTensor(),
 ])
 
-# Dataset path
+# Set dataset folder path
 dataset_path = "data"
 
 train_dataset = ImageFolder(
@@ -105,31 +104,31 @@ train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, nu
 val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=8, pin_memory=True)
 
 if __name__ == "__main__":
-    # 3. Model, Loss, Optimizer
+    # Set up model, loss, and optimizer
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = FingerprintLivenessCNN().to(device)
     criterion = nn.BCELoss()
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
 
-    # Optionally load best model if exists (for resume or inference)
+    # Load best model if it exists
     if os.path.exists("liveness_model_best.pth"):
         model.load_state_dict(torch.load("liveness_model_best.pth", map_location=device))
         print("Loaded best model weights from liveness_model_best.pth")
 
-    # Learning rate scheduler
-    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.7)  # Decrease LR by 30% every 10 epochs
+    # Set up learning rate scheduler
+    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.7)  # Lower LR every 10 epochs
 
-    # Initialize run_id and timestamp ONCE at the top for the whole run
+    # Make a run ID and timestamp for this training
     run_id = str(uuid.uuid4())
     timestamp = datetime.now().isoformat()
 
-    # Define a strict header and column order for all metrics.csv writes
+    # Set the column order for metrics.csv
     METRICS_HEADER = [
         "run_id", "epoch", "timestamp", "y_true", "y_pred", "y_prob", "processing_time",
         "accuracy", "precision", "recall", "f1_score", "robustness_tnr", "bce", "conf_matrix", "source"
     ]
 
-    # 4. Training loop with early stopping
+    # Start training with early stopping
     best_val_loss = float('inf')
     early_stop_counter = 0
     early_stop_patience = 20  # Stop if no improvement for 20 epochs
@@ -154,7 +153,7 @@ if __name__ == "__main__":
         print(
             f"Epoch [{epoch+1}/{NUM_EPOCHS}], Average Loss: {avg_loss:.4f}"
         )
-        # Log per-epoch BCE to metrics.csv
+        # Save BCE loss for this epoch to metrics.csv
         epoch_row = {
             "run_id": run_id,
             "epoch": epoch + 1,
@@ -172,10 +171,10 @@ if __name__ == "__main__":
             "source": 'Standalone',
         }
         csv_path = "metrics.csv"
-        # When writing per-epoch, per-sample, or summary rows, always use METRICS_HEADER and fill missing columns with ''
+        # Always use METRICS_HEADER and fill missing columns with ''
         def write_metrics_row(row, csv_path):
             import pandas as pd
-            # Ensure all columns are present and in correct order
+            # Make sure all columns are present and in the right order
             row_filled = {k: row.get(k, '') for k in METRICS_HEADER}
             df = pd.DataFrame([row_filled])
             if os.path.exists(csv_path):
@@ -185,7 +184,7 @@ if __name__ == "__main__":
         write_metrics_row(epoch_row, csv_path)
         scheduler.step()
 
-        # Early stopping: evaluate on validation set
+        # Check validation loss for early stopping
         model.eval()
         val_loss = 0
         val_batches = 0
@@ -201,7 +200,7 @@ if __name__ == "__main__":
         if avg_val_loss < best_val_loss:
             best_val_loss = avg_val_loss
             early_stop_counter = 0
-            # Always save best model only
+            # Save the best model so far
             torch.save(model.state_dict(), "liveness_model_best.pth")
         else:
             early_stop_counter += 1
@@ -210,7 +209,7 @@ if __name__ == "__main__":
                 print(f"Early stopping triggered at epoch {epoch+1}.")
                 break
 
-    # 5. Evaluate and save metrics
+    # After training, evaluate and save metrics
     all_labels = []
     all_preds = []
     all_probs = []
@@ -226,23 +225,23 @@ if __name__ == "__main__":
             start = time.time()
             outputs = model(images).squeeze()
             end = time.time()
-            elapsed_ms = (end - start) * 1000  # ms for the batch
+            elapsed_ms = (end - start) * 1000  # Time for the batch in ms
             probs = outputs.cpu().numpy()
             preds = (outputs > 0.5).float().cpu().numpy()
             all_labels.extend(labels.cpu().numpy())
             all_preds.extend(preds)
             all_probs.extend(probs)
             all_epochs.extend([NUM_EPOCHS] * len(labels))
-            # Record per-sample processing time (divide batch time by batch size)
+            # Save processing time for each sample
             processing_times.extend([elapsed_ms / len(labels)] * len(labels))
 
-    # Prepare DataFrame with extra columns (including summary metrics for each row)
-    # Calculate summary metrics before creating the DataFrame
+    # Make a DataFrame with all metrics
+    # Calculate summary metrics before making the DataFrame
     accuracy = float(accuracy_score(all_labels, all_preds))
     precision = float(precision_score(all_labels, all_preds, zero_division=0))
     recall = float(recall_score(all_labels, all_preds, zero_division=0))
     f1 = float(f1_score(all_labels, all_preds, zero_division=0))
-    # After calculating all_preds and all_labels, add confusion matrix calculation
+    # Get confusion matrix
     cm = confusion_matrix(all_labels, all_preds)
     cm_flat = cm.flatten() if cm.size == 4 else [0, 0, 0, 0]  # [TN, FP, FN, TP]
 
@@ -264,7 +263,7 @@ if __name__ == "__main__":
         }
     )
 
-    # Append to CSV if exists, else create new
+    # Add metrics to CSV file
     csv_path = "metrics.csv"
     if os.path.exists(csv_path):
         metrics_df.to_csv(csv_path, mode="a", header=False, index=False)
@@ -272,8 +271,7 @@ if __name__ == "__main__":
         metrics_df.to_csv(csv_path, header=METRICS_HEADER, index=False)
     print("Validation metrics appended to metrics.csv")
 
-    # 6. Save model
-    # Only save best model (already saved during training if improved)
+    # Save the best model (already saved during training)
     print("Best model saved as liveness_model_best.pth")
 
     # Calculate summary metrics
@@ -281,24 +279,24 @@ if __name__ == "__main__":
     precision = float(precision_score(all_labels, all_preds, zero_division=0))
     recall = float(recall_score(all_labels, all_preds, zero_division=0))
     f1 = float(f1_score(all_labels, all_preds, zero_division=0))
-    # Robustness against spoofing (TNR)
+    # Calculate True Negative Rate for spoof detection
     import numpy as np
     all_labels_np = np.array(all_labels)
     all_preds_np = np.array(all_preds)
     tn = ((all_labels_np == 0) & (all_preds_np == 0)).sum()
     fp = ((all_labels_np == 0) & (all_preds_np == 1)).sum()
     tnr = float(tn / (tn + fp)) if (tn + fp) > 0 else 0.0
-    # Binary Cross Entropy (BCE)
+    # Calculate Binary Cross Entropy
     if len(all_probs) > 0 and len(all_labels) > 0:
         bce = float(nn.BCELoss()(torch.tensor(all_probs), torch.tensor(all_labels)).item())
         if np.isnan(bce) or np.isinf(bce):
             bce = 0.0
     else:
         bce = 0.0
-    # In summary row, add conf_matrix (always 4 values, even if all zero)
+    # Make sure confusion matrix has 4 values
     if not (isinstance(cm_flat, (list, np.ndarray)) and len(cm_flat) == 4):
         cm_flat = [0, 0, 0, 0]
-    # When writing the summary row, always use METRICS_HEADER order
+    # Write summary row to metrics.csv
     summary_row = {
         'run_id': run_id,
         'epoch': 'summary',
@@ -319,7 +317,7 @@ if __name__ == "__main__":
     write_metrics_row(summary_row, csv_path)
     print("Summary metrics appended to metrics.csv")
 
-    # 7. Fingerrint Prediction
+    # Function to predict one image
     def predict_single_image(image_path):
         import cv2
 

@@ -11,17 +11,16 @@ from performance_metrics import (binary_cross_entropy, calculate_metrics,
                                  get_confusion_matrix,
                                  robustness_against_spoofing)
 
-# Configuration
+# Set model path and image size
 MODEL_PATH = "liveness_model_best.pth"
 IMAGE_SIZE = 224
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-
-# Load Model
+# Load the model
 from torchvision.models.resnet import ResNet, BasicBlock
 from torchvision import models
 
-# --- Static patch: Custom BasicBlock with non-inplace addition for Opacus compatibility ---
+# This block is changed for Opacus
 class PatchedBasicBlock(BasicBlock):
     def forward(self, x):
         identity = x
@@ -43,7 +42,7 @@ class FingerprintLivenessCNN(nn.Module):
     def __init__(self):
         super(FingerprintLivenessCNN, self).__init__()
         self.resnet = patched_resnet18()
-        # Load weights from torchvision's resnet18 if available
+        # Try to load pretrained weights
         try:
             state_dict = models.resnet18(weights=models.ResNet18_Weights.DEFAULT).state_dict()
             self.resnet.load_state_dict(state_dict, strict=False)
@@ -78,7 +77,7 @@ class FingerprintLivenessCNN(nn.Module):
         x = self.classifier(x)
         return torch.sigmoid(x)
 
-
+# Cache the model for Streamlit
 @st.cache_resource
 def load_model():
     model = FingerprintLivenessCNN().to(DEVICE)
@@ -86,10 +85,9 @@ def load_model():
     model.eval()
     return model
 
-
 model = load_model()
 
-# Image Preprocessing
+# Set up image preprocessing
 transform = transforms.Compose(
     [transforms.Resize((IMAGE_SIZE, IMAGE_SIZE)), transforms.ToTensor()]
 )
@@ -123,14 +121,14 @@ with tab1:
         if output < liveness_threshold:
             confidence = 1 - output
             st.success(f"Live Fingerprint (Confidence: {confidence:.4f})")
-            # Show enrolled template uploader only if live
+            # Only show template uploader if live
             enrolled_file = st.file_uploader(
                 "Enrolled Template for Matching",
                 type=["jpg", "jpeg", "png", "tif"],
                 key="enroll",
             )
             if enrolled_file is not None:
-                # Save uploaded files temporarily
+                # Save uploaded files for matching
                 live_path = "temp_live.png"
                 enroll_path = "temp_enroll.png"
                 image.save(live_path)
@@ -138,7 +136,7 @@ with tab1:
                 # Run matcher
                 match_result = match_fingerprints(live_path, enroll_path)
                 st.write(f"### Matcher Result: {match_result}")
-                # Clean up
+                # Delete temp files
                 os.remove(live_path)
                 os.remove(enroll_path)
         else:
@@ -146,12 +144,12 @@ with tab1:
             st.error(f"Spoofed Fingerprint (Confidence: {confidence:.4f})")
             st.warning("Matcher is disabled for spoofed fingerprints.")
 
-            # Log the incident
+            # Log spoof detection
             from datetime import datetime
             with open("spoof_incidents.log", "a") as log_file:
                 log_file.write(f"{datetime.now().isoformat()} - Spoof detected! Confidence: {confidence:.4f}\n")
 
-            # Alert the user/admin
+            # Show alert for spoof
             st.warning("ALERT: Spoofed fingerprint detected! Incident has been logged and the administrator has been notified.")
 
 with tab2:
@@ -161,7 +159,7 @@ with tab2:
     import seaborn as sns
     import numpy as np
 
-    # Always try to load metrics.csv
+    # Try to load metrics.csv
     if os.path.exists("metrics.csv"):
         df = pd.read_csv("metrics.csv")
         st.info("Loaded metrics.csv automatically.")
@@ -171,7 +169,7 @@ with tab2:
         st.warning("metrics.csv not found. Please run training or federated learning first.")
         st.stop()
 
-    # Filter for summary rows
+    # Only use summary rows
     if "epoch" in df.columns:
         summary_df = df[df["epoch"] == "summary"]
         if summary_df.empty:
@@ -181,19 +179,19 @@ with tab2:
         st.warning("No 'epoch' column found. Please update your metrics.csv format.")
         st.stop()
 
-    # Option to select run_id
+    # Let user pick a run_id
     run_ids = summary_df["run_id"].unique()
     selected_run = st.selectbox("Select run_id to view metrics for a specific run:", run_ids)
     run_metrics = summary_df[summary_df["run_id"] == selected_run].iloc[0]
 
-    # Helper to safely convert to float for metrics
+    # Helper to safely convert to float
     def safe_float(val):
         try:
             return float(val)
         except (ValueError, TypeError):
             return None
 
-    # Show each metric individually
+    # Show each metric
     st.subheader("Summary Metrics")
     acc = safe_float(run_metrics.get('accuracy', 0))
     prec = safe_float(run_metrics.get('precision', 0))
@@ -208,7 +206,7 @@ with tab2:
     st.metric("Robustness (TNR)", f"{tnr:.4f}" if tnr is not None else "N/A")
     st.metric("Binary Cross Entropy", f"{bce:.4f}" if bce is not None else "N/A")
 
-    # Calculate and display processing time per sample (ms)
+    # Show processing time per sample
     st.subheader("Processing Time")
     if "timestamp" in df.columns and "run_id" in df.columns:
         per_sample_rows = df[(df["run_id"] == selected_run) & (df["epoch"] != "summary")]
@@ -225,7 +223,7 @@ with tab2:
     else:
         st.write("**Processing Time per Sample:** N/A (missing columns)")
 
-    # Bar chart for metrics
+    # Show bar chart for metrics
     st.subheader("Metrics Bar Chart")
     metric_names = ["Accuracy", "Precision", "Recall", "F1-Score", "Robustness (TNR)"]
     metric_vals = [acc, prec, rec, f1, tnr]
@@ -235,14 +233,14 @@ with tab2:
     ax2.set_ylim(0, 1)
     st.pyplot(fig2)
 
-    # Bar chart for Binary Cross Entropy
+    # Show bar chart for BCE
     st.subheader("Binary Cross Entropy Bar Chart")
     fig_bce, ax_bce = plt.subplots()
     ax_bce.bar(["Binary Cross Entropy"], [bce if bce is not None else 0], color="salmon")
     ax_bce.set_ylabel("BCE")
     st.pyplot(fig_bce)
 
-    # Line chart for Binary Cross Entropy over epochs (if available)
+    # Show BCE over epochs
     st.subheader("Binary Cross Entropy Over Epochs")
     # Try to get per-epoch BCE for the selected run
     if "epoch" in df.columns and "bce" in df.columns:
@@ -267,7 +265,7 @@ with tab2:
     else:
         st.info("No per-epoch BCE data available in metrics.csv.")
 
-    # Comparison across runs
+    # Show comparison across runs
     if len(run_ids) > 1:
         st.write("\n---\n")
         st.subheader("Comparison Across Runs")
@@ -297,7 +295,7 @@ with tab2:
         ax3.legend(title="run_id")
         st.pyplot(fig3)
 
-    # Confusion Matrix Heatmap
+    # Show confusion matrix
     st.subheader("Confusion Matrix")
     cm_str = run_metrics.get("conf_matrix", "")
     try:

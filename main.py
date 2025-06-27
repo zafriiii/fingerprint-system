@@ -59,11 +59,5 @@ if __name__ == "__main__":
         else:
             print("Fingerprint is SPOOFED. Access denied.")
 
-        # Example: Evaluate performance (replace with your real data)
-        # y_true = [0, 1, 0, 1]  # 0=live, 1=spoof
-        # y_pred = [0, 1, 1, 0]
-        # y_prob = [0.9, 0.8, 0.4, 0.3]  # predicted probabilities
-        # evaluate_performance(y_true, y_pred, y_prob)
-
     except Exception as e:
         print("Error:", str(e))

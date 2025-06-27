@@ -9,12 +9,7 @@ from sklearn.metrics import (accuracy_score, confusion_matrix, f1_score,
 
 def calculate_metrics(y_true, y_pred):
     """
-    Calculate accuracy, precision, recall, and F1-score.
-    Args:
-        y_true (array-like): True binary labels (0 or 1).
-        y_pred (array-like): Predicted binary labels (0 or 1).
-    Returns:
-        dict: Dictionary with accuracy, precision, recall, and f1_score.
+    Get accuracy, precision, recall, and F1-score.
     """
     return {
         "accuracy": accuracy_score(y_true, y_pred),
@@ -26,10 +21,7 @@ def calculate_metrics(y_true, y_pred):
 
 def measure_processing_time(func, *args, **kwargs):
     """
-    Measure the processing time of a function.
-    Returns:
-        result: The result of the function call.
-        elapsed: Time in seconds.
+    Get the time it takes to run a function.
     """
     start = time.time()
     result = func(*args, **kwargs)
@@ -39,14 +31,7 @@ def measure_processing_time(func, *args, **kwargs):
 
 def robustness_against_spoofing(y_true, y_pred, spoof_label=1, live_label=0):
     """
-    Calculate robustness against spoofing as the True Negative Rate (TNR) for spoof samples.
-    Args:
-        y_true (array-like): True labels (0=live, 1=spoof).
-        y_pred (array-like): Predicted labels (0=live, 1=spoof).
-        spoof_label (int): Label representing spoof samples.
-        live_label (int): Label representing live samples.
-    Returns:
-        float: Robustness against spoofing (TNR for spoof class).
+    Get TNR for spoof samples.
     """
     y_true = np.array(y_true)
     y_pred = np.array(y_pred)
@@ -60,12 +45,7 @@ def robustness_against_spoofing(y_true, y_pred, spoof_label=1, live_label=0):
 
 def binary_cross_entropy(y_true, y_pred):
     """
-    Calculate Binary Cross Entropy loss for binary classification.
-    Args:
-        y_true (array-like): True binary labels (0 or 1).
-        y_pred (array-like): Predicted probabilities (between 0 and 1).
-    Returns:
-        float: BCE loss value.
+    Get BCE loss for binary classification.
     """
     y_true_tensor = torch.tensor(y_true, dtype=torch.float32)
     y_pred_tensor = torch.tensor(y_pred, dtype=torch.float32)
@@ -75,11 +55,6 @@ def binary_cross_entropy(y_true, y_pred):
 
 def get_confusion_matrix(y_true, y_pred):
     """
-    Calculate the confusion matrix for binary classification.
-    Args:
-        y_true (array-like): True binary labels (0 or 1).
-        y_pred (array-like): Predicted binary labels (0 or 1).
-    Returns:
-        np.ndarray: Confusion matrix [[TN, FP], [FN, TP]].
+    Get confusion matrix for binary classification.
     """
     return confusion_matrix(y_true, y_pred)
