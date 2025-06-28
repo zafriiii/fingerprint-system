@@ -1,14 +1,9 @@
-# Central server for federated learning
 import flwr as fl
 
-
-# Disable evaluation on the server (only clients evaluate)
 class NoEvalFedAvg(fl.server.strategy.FedAvg):
     def configure_evaluate(self, server_round, parameters, client_manager):
         return []
 
-
-# Start the Flower server
 fl.server.start_server(
     server_address="localhost:8080",
     config=fl.server.ServerConfig(num_rounds=3),
