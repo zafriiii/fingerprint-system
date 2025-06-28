@@ -79,9 +79,7 @@ def load_data(val_split=0.2):
         transforms.RandomResizedCrop(224, scale=(0.7, 1.0)),
         transforms.RandomRotation(15),
         transforms.RandomHorizontalFlip(),
-        transforms.GaussianBlur(3, sigma=(0.1, 2.0)),
         transforms.ToTensor(),
-        transforms.RandomErasing(p=0.3, scale=(0.02, 0.2)),
         transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
     ])
     dataset = ImageFolder("data/train", transform=transform)
@@ -153,13 +151,16 @@ class FlowerClientDP(fl.client.NumPyClient):
         self.base_model.load_state_dict(state_dict, strict=True)
 
     def fit(self, parameters, config):
+        import time
         self.set_parameters(parameters)
         num_epochs = 15
         patience = 5
         best_val_loss = float('inf')
         epochs_no_improve = 0
+        epoch_times = []
         print(f"[INFO] Starting federated training: {len(self.trainloader.dataset)} samples, {len(self.trainloader)} batches per epoch, {num_epochs} epochs.")
         for epoch in range(1, num_epochs + 1):
+            epoch_start = time.time()
             self.base_model.train()
             total_loss = 0.0
             for batch_idx, (x, y) in enumerate(self.trainloader):
@@ -174,7 +175,14 @@ class FlowerClientDP(fl.client.NumPyClient):
                 if (batch_idx + 1) % 10 == 0 or (batch_idx + 1) == len(self.trainloader):
                     print(f"Epoch {epoch} Batch {batch_idx+1}/{len(self.trainloader)} - Loss: {loss.item():.4f}")
             avg_loss = total_loss / len(self.trainloader)
-            print(f"Epoch {epoch}, Avg Loss: {avg_loss:.4f}")
+            epoch_end = time.time()
+            epoch_time = epoch_end - epoch_start
+            epoch_times.append(epoch_time)
+            avg_epoch_time = sum(epoch_times) / len(epoch_times)
+            remaining_epochs = num_epochs - epoch
+            eta_seconds = avg_epoch_time * remaining_epochs
+            eta_str = time.strftime('%H:%M:%S', time.gmtime(eta_seconds))
+            print(f"Epoch {epoch}, Avg Loss: {avg_loss:.4f}, Time: {epoch_time:.2f}s, ETA: {eta_str}")
 
             val_loss = avg_loss
             if val_loss < best_val_loss:
