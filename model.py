@@ -1,4 +1,3 @@
-# Model and training setup for fingerprint liveness detection
 import os
 import uuid
 from datetime import datetime

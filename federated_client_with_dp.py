@@ -7,14 +7,13 @@ import pandas as pd
 from torch.cuda.amp import autocast, GradScaler
 from torchvision.models.resnet import ResNet, BasicBlock
 
-torch.backends.cudnn.benchmark = True  # Makes training faster on GPU
+torch.backends.cudnn.benchmark = True
 
 BATCH_SIZE = 128
 NUM_WORKERS = 8
-LEARNING_RATE = 1e-3  # Match model.py for faster learning
+LEARNING_RATE = 1e-3
 
 def load_data(val_split=0.2):
-    # Set up data loading and strong augmentations for better generalization
     transform = transforms.Compose([
         transforms.Resize((224, 224)),
         transforms.ColorJitter(brightness=0.3, contrast=0.3),
@@ -40,7 +39,6 @@ def load_data(val_split=0.2):
     print(f"[INFO] Batches per epoch (val): {len(val_loader)}")
     return train_loader, val_loader
 
-# Set the column order for metrics.csv (keeps logs organized)
 METRICS_HEADER = [
     "run_id", "epoch", "timestamp", "y_true", "y_pred", "y_prob", "processing_time",
     "accuracy", "precision", "recall", "f1_score", "robustness_tnr", "bce", "conf_matrix", "source"
@@ -79,7 +77,7 @@ def fit(self, parameters, config):
                 total_loss += loss.item()
             avg_loss = total_loss / len(self.trainloader)
             print(f"Epoch {epoch}, Avg Loss: {avg_loss:.4f}")
-            # Save BCE loss for this epoch to metrics.csv
+
             import uuid
             from datetime import datetime
             run_id = getattr(self, 'run_id', str(uuid.uuid4()))
@@ -120,17 +118,17 @@ def evaluate(self, parameters, config):
                 with autocast():
                     output = self.base_model(x)
                 end = time.time()
-                elapsed_ms = (end - start) * 1000  # Time for the batch in ms
+                elapsed_ms = (end - start) * 1000
                 probs = output.cpu().numpy()
                 preds = (output > 0.5).float().cpu().numpy()
-                # Add confidence threshold for unknown/non-fingerprint
+
                 for i, prob in enumerate(probs):
                     if prob > 0.9:
-                        preds[i] = 1  # Live
+                        preds[i] = 1 
                     elif prob < 0.1:
-                        preds[i] = 0  # Spoof
+                        preds[i] = 0
                     else:
-                        preds[i] = -1  # Unknown/Non-fingerprint
+                        preds[i] = -1 
                 all_preds.extend(preds)
                 all_labels.extend(y.cpu().numpy())
                 all_probs.extend(probs)
@@ -164,7 +162,7 @@ class FingerprintLivenessCNN(torch.nn.Module):
         except Exception as e:
             print(f"Warning: Could not load pretrained weights: {e}")
         for name, param in self.resnet.named_parameters():
-            param.requires_grad = True  # Unfreeze all layers for full training
+            param.requires_grad = True
         self.classifier = torch.nn.Sequential(
             torch.nn.Linear(1000, 512),
             torch.nn.BatchNorm1d(512),
@@ -187,4 +185,4 @@ class FingerprintLivenessCNN(torch.nn.Module):
     def forward(self, x):
         x = self.resnet(x)
         x = self.classifier(x)
-        return x  # No sigmoid here!
+        return x 
