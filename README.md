@@ -52,19 +52,15 @@ This project aims to:
 ## File Structure
 
 ```bash
-├── liveness_detection_model.py         # CNN model training, validation, metrics export (main, PyTorch)
-├── liveness_detection_keras.py         # Keras model (alternative, empty by default)
-├── federated_server.py                 # Flower federated server (no server-side eval)
-├── federated_client_with_dp.py         # FL client with DP, auto-load/save model & metrics, validation
+├── model.py         # CNN model training, validation, metrics export
+├── fl_server.py                 # Flower federated server
+├── fl_with_dp.py         # FL client with DP
 ├── fingerprint_matcher.py              # OpenCV fingerprint comparison logic
-├── augment_real.py                     # Data augmentation script (robust, for sensor adaptation)
-├── app.py                              # Streamlit web GUI (main demo, metrics visualization)
+├── augment_real.py                     # Data augmentation script
+├── app.py                              # Streamlit web GUI
 ├── performance_metrics.py              # Metrics calculation utilities
-├── metrics.csv                         # Auto-generated performance metrics (ignored by git)
-├── liveness_model_best.pth             # Trained model weights (ignored by git)
-├── .gitignore                          # Ignores models, metrics, and data
+├── metrics.csv                         # Auto-generated performance metrics
 ├── main.py                             # CLI inference and evaluation example
-├── data/                               # Dataset folder (train/val, 0_live/spoof)
 ```
 
 ---
@@ -78,17 +74,17 @@ This project aims to:
    - Augments real fingerprint images for better generalization, especially for new sensors.
 2. **Model Training:**
    ```bash
-   python liveness_detection_model.py
+   python model.py
    ```
    - Trains the liveness detection model, logs metrics, and saves only the best model.
 3. **Federated Learning:**
    - Start server:
      ```bash
-     python federated_server.py
+     python fl_server.py
      ```
    - Start client(s):
      ```bash
-     python federated_client_with_dp.py
+     python fl_with_dp.py
      ```
    - Each client uses the same model/augmentation and logs metrics after each round.
 4. **Run Web App:**
