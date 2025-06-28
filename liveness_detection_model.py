@@ -131,7 +131,7 @@ if __name__ == "__main__":
     # Start training with early stopping
     best_val_loss = float('inf')
     early_stop_counter = 0
-    early_stop_patience = 20  # Stop if no improvement for 20 epochs
+    early_stop_patience = 20 # Number of epochs to wait for improvement
 
     for epoch in range(NUM_EPOCHS):
         model.train()

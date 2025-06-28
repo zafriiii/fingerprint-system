@@ -28,7 +28,7 @@ class PatchedBasicBlock(BasicBlock):
         out = self.bn2(out)
         if self.downsample is not None:
             identity = self.downsample(x)
-        out = out + identity  # Not in-place
+        out = out + identity 
         out = self.relu(out)
         return out
 
@@ -91,6 +91,13 @@ def load_data(val_split=0.2):
     train_set, val_set = torch.utils.data.random_split(dataset, [num_train, num_val], generator=torch.Generator().manual_seed(42))
     train_loader = DataLoader(train_set, batch_size=16, shuffle=True)
     val_loader = DataLoader(val_set, batch_size=16, shuffle=False)
+    # Print training set size and number of batches per epoch
+    print(f"Training set size: {len(train_set)}")
+    print(f"Number of batches per epoch: {len(train_loader)}")
+    print(f"[INFO] Training set size: {len(train_set)} samples")
+    print(f"[INFO] Validation set size: {len(val_set)} samples")
+    print(f"[INFO] Batches per epoch (train): {len(train_loader)}")
+    print(f"[INFO] Batches per epoch (val): {len(val_loader)}")
     return train_loader, val_loader
 
 # Set the column order for metrics.csv
@@ -128,6 +135,17 @@ class FlowerClientDP(fl.client.NumPyClient):
                 max_grad_norm=1.0,
             )
         )
+        # Store and print training set size and number of batches per epoch
+        self.train_set_size = len(self.trainloader.dataset)
+        # Print actual batch size after Opacus privacy engine
+        if hasattr(self.trainloader, 'batch_size'):
+            print(f"[Client] Actual batch size after Opacus: {self.trainloader.batch_size}")
+        else:
+            print(f"[Client] DataLoader has no batch_size attribute after Opacus.")
+        self.num_batches_per_epoch = len(self.trainloader)
+        print(f"[Client] Training set size: {self.train_set_size}")
+        print(f"[Client] Number of batches per epoch: {self.num_batches_per_epoch}")
+        print(f"[INFO] Federated client initialized with {self.train_set_size} training samples, {self.num_batches_per_epoch} batches per epoch, batch size: {getattr(self.trainloader, 'batch_size', 'unknown')}")
 
     def get_parameters(self, config):
         return [val.cpu().numpy() for _, val in self.base_model.state_dict().items()]
@@ -140,6 +158,7 @@ class FlowerClientDP(fl.client.NumPyClient):
     def fit(self, parameters, config):
         self.set_parameters(parameters)
         num_epochs = 10  # Train for 10 epochs
+        print(f"[INFO] Starting federated training: {len(self.trainloader.dataset)} samples, {len(self.trainloader)} batches per epoch, {num_epochs} epochs.")
         for epoch in range(1, num_epochs + 1):
             self.base_model.train()
             total_loss = 0.0
@@ -295,6 +314,7 @@ if __name__ == "__main__":
         model = FingerprintLivenessCNN()
         print("No pretrained weights found, starting from scratch.")
     trainloader, valloader = load_data()
+    print(f"[INFO] Final training set size: {len(trainloader.dataset)} samples, {len(trainloader)} batches per epoch.")
     client = FlowerClientDP(model, trainloader)
     # Evaluate on validation set after federated training
     fl.client.start_numpy_client(server_address="localhost:8080", client=client)
