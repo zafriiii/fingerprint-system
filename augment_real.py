@@ -1,15 +1,16 @@
+# Script to create more real fingerprint images using augmentation
 import os
 from pathlib import Path
 
 from PIL import Image
 from torchvision import transforms
 
-# Set input and output folders
+# Input and output folders
 input_dir = "realval"
 output_dir = "data_augmented/realval"
 os.makedirs(output_dir, exist_ok=True)
 
-# Set up image augmentations
+# Image augmentations to make new images
 transform_ops = transforms.Compose(
     [
         transforms.RandomRotation(15),
@@ -19,7 +20,7 @@ transform_ops = transforms.Compose(
     ]
 )
 
-# Set how many images we want
+# How many images we want in total
 TARGET_COUNT = 5224
 
 # Get all input image file names

@@ -1,3 +1,4 @@
+# Main script for fingerprint liveness and matching
 import cv2
 import torch
 import torchvision.transforms as transforms
@@ -11,6 +12,7 @@ from performance_metrics import (binary_cross_entropy, calculate_metrics,
 IMAGE_SIZE = 224
 
 
+# Prepare image for the model
 def preprocess_image(image_path):
     img = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
     if img is None:
@@ -21,6 +23,7 @@ def preprocess_image(image_path):
     return tensor
 
 
+# Run liveness check
 def check_liveness(model, tensor):
     model.eval()
     with torch.no_grad():
@@ -30,6 +33,7 @@ def check_liveness(model, tensor):
         return "Live" if prob > 0.45 else "Spoof"
 
 
+# Print performance metrics
 def evaluate_performance(y_true, y_pred, y_prob=None):
     metrics = calculate_metrics(y_true, y_pred)
     print("Performance Metrics:", metrics)

@@ -1,5 +1,3 @@
-# This file is for federated learning with differential privacy
-
 import os
 import random
 
@@ -17,7 +15,6 @@ from torchvision.datasets import ImageFolder
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
 from torchvision.models.resnet import ResNet, BasicBlock
 
-# This block is changed for Opacus
 class PatchedBasicBlock(BasicBlock):
     def forward(self, x):
         identity = x
@@ -33,21 +30,18 @@ class PatchedBasicBlock(BasicBlock):
         return out
 
 def patched_resnet18():
-    # Use our custom block
+    # ResNet18 using custom block
     return ResNet(block=PatchedBasicBlock, layers=[2, 2, 2, 2])
 
-# This model must match liveness_detection_model.py
 class FingerprintLivenessCNN(nn.Module):
     def __init__(self):
         super(FingerprintLivenessCNN, self).__init__()
-        self.resnet = patched_resnet18()  # No pretrained weights for custom block
-        # Try to load pretrained weights
+        self.resnet = patched_resnet18()
         try:
             state_dict = models.resnet18(weights=models.ResNet18_Weights.DEFAULT).state_dict()
             self.resnet.load_state_dict(state_dict, strict=False)
         except Exception as e:
             print(f"Warning: Could not load pretrained weights: {e}")
-        # Unfreeze all layers
         for name, param in self.resnet.named_parameters():
             param.requires_grad = True
         self.classifier = nn.Sequential(
@@ -72,26 +66,30 @@ class FingerprintLivenessCNN(nn.Module):
     def forward(self, x):
         x = self.resnet(x)
         x = self.classifier(x)
-        return torch.sigmoid(x)
-
-# Set up data loading and augmentation
+        return x 
+    
+# Data loading and augmentations
+BATCH_SIZE = 128
+NUM_WORKERS = 8
 
 def load_data(val_split=0.2):
     transform = transforms.Compose([
         transforms.Resize((224, 224)),
         transforms.ColorJitter(brightness=0.3, contrast=0.3),
-        transforms.RandomResizedCrop(224, scale=(0.8, 1.0)),
-        transforms.RandomRotation(10),
+        transforms.RandomResizedCrop(224, scale=(0.7, 1.0)),
+        transforms.RandomRotation(15),
         transforms.RandomHorizontalFlip(),
+        transforms.GaussianBlur(3, sigma=(0.1, 2.0)),
         transforms.ToTensor(),
+        transforms.RandomErasing(p=0.3, scale=(0.02, 0.2)),
+        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
     ])
     dataset = ImageFolder("data/train", transform=transform)
     num_val = int(val_split * len(dataset))
     num_train = len(dataset) - num_val
     train_set, val_set = torch.utils.data.random_split(dataset, [num_train, num_val], generator=torch.Generator().manual_seed(42))
-    train_loader = DataLoader(train_set, batch_size=16, shuffle=True)
-    val_loader = DataLoader(val_set, batch_size=16, shuffle=False)
-    # Print training set size and number of batches per epoch
+    train_loader = DataLoader(train_set, batch_size=BATCH_SIZE, shuffle=True, num_workers=NUM_WORKERS, pin_memory=torch.cuda.is_available())
+    val_loader = DataLoader(val_set, batch_size=BATCH_SIZE, shuffle=False, num_workers=NUM_WORKERS, pin_memory=torch.cuda.is_available())
     print(f"Training set size: {len(train_set)}")
     print(f"Number of batches per epoch: {len(train_loader)}")
     print(f"[INFO] Training set size: {len(train_set)} samples")
@@ -100,7 +98,7 @@ def load_data(val_split=0.2):
     print(f"[INFO] Batches per epoch (val): {len(val_loader)}")
     return train_loader, val_loader
 
-# Set the column order for metrics.csv
+
 METRICS_HEADER = [
     "run_id", "epoch", "timestamp", "y_true", "y_pred", "y_prob", "processing_time",
     "accuracy", "precision", "recall", "f1_score", "robustness_tnr", "bce", "conf_matrix", "source"
@@ -115,13 +113,13 @@ def write_metrics_row(row, csv_path):
     else:
         df.to_csv(csv_path, header=METRICS_HEADER, index=False)
 
-# This is the Flower client with DP
+
 class FlowerClientDP(fl.client.NumPyClient):
-    def __init__(self, model, trainloader):
+    def __init__(self, model, trainloader, device):
         model = ModuleValidator.fix_and_validate(model)
-        self.base_model = model
+        self.base_model = model.to(device)
         self.trainloader = trainloader
-        self.criterion = nn.BCELoss()
+        self.criterion = nn.BCEWithLogitsLoss() 
         self.optimizer = optim.Adam(self.base_model.parameters(), lr=1e-4)
         self.privacy_engine = PrivacyEngine()
         self.base_model, self.optimizer, self.trainloader = (
@@ -129,15 +127,14 @@ class FlowerClientDP(fl.client.NumPyClient):
                 module=self.base_model,
                 optimizer=self.optimizer,
                 data_loader=self.trainloader,
-                target_epsilon=5.0,  # For less noise, try 10.0
+                target_epsilon=5.0,
                 target_delta=1e-5,
                 epochs=1,
                 max_grad_norm=1.0,
             )
         )
-        # Store and print training set size and number of batches per epoch
+        self.device = device
         self.train_set_size = len(self.trainloader.dataset)
-        # Print actual batch size after Opacus privacy engine
         if hasattr(self.trainloader, 'batch_size'):
             print(f"[Client] Actual batch size after Opacus: {self.trainloader.batch_size}")
         else:
@@ -157,13 +154,16 @@ class FlowerClientDP(fl.client.NumPyClient):
 
     def fit(self, parameters, config):
         self.set_parameters(parameters)
-        num_epochs = 10  # Train for 10 epochs
+        num_epochs = 15
+        patience = 5
+        best_val_loss = float('inf')
+        epochs_no_improve = 0
         print(f"[INFO] Starting federated training: {len(self.trainloader.dataset)} samples, {len(self.trainloader)} batches per epoch, {num_epochs} epochs.")
         for epoch in range(1, num_epochs + 1):
             self.base_model.train()
             total_loss = 0.0
             for batch_idx, (x, y) in enumerate(self.trainloader):
-                x, y = x, y.float()
+                x, y = x.to(self.device), y.float().to(self.device)
                 y = y.unsqueeze(1)
                 self.optimizer.zero_grad()
                 output = self.base_model(x)
@@ -171,12 +171,22 @@ class FlowerClientDP(fl.client.NumPyClient):
                 loss.backward()
                 self.optimizer.step()
                 total_loss += loss.item()
-                print(
-                    f"Epoch {epoch} Batch {batch_idx+1}/{len(self.trainloader)} - Loss: {loss.item():.4f}"
-                )
+                if (batch_idx + 1) % 10 == 0 or (batch_idx + 1) == len(self.trainloader):
+                    print(f"Epoch {epoch} Batch {batch_idx+1}/{len(self.trainloader)} - Loss: {loss.item():.4f}")
             avg_loss = total_loss / len(self.trainloader)
             print(f"Epoch {epoch}, Avg Loss: {avg_loss:.4f}")
-            # Save BCE loss for this epoch to metrics.csv
+
+            val_loss = avg_loss
+            if val_loss < best_val_loss:
+                best_val_loss = val_loss
+                epochs_no_improve = 0
+            else:
+                epochs_no_improve += 1
+                print(f"[INFO] No improvement for {epochs_no_improve} epoch(s). Best loss: {best_val_loss:.4f}")
+                if epochs_no_improve >= patience:
+                    print(f"[INFO] Early stopping at epoch {epoch}.")
+                    break
+
             import uuid
             from datetime import datetime
             run_id = getattr(self, 'run_id', str(uuid.uuid4()))
@@ -209,7 +219,7 @@ class FlowerClientDP(fl.client.NumPyClient):
         processing_times = []
         with torch.no_grad():
             for x, y in self.trainloader:
-                x, y = x, y.float()
+                x, y = x.to(self.device), y.float().to(self.device)
                 y = y.unsqueeze(1)
                 import time
                 start = time.time()
@@ -222,12 +232,11 @@ class FlowerClientDP(fl.client.NumPyClient):
                 all_labels.extend(y.cpu().numpy())
                 all_probs.extend(probs)
                 processing_times.extend([elapsed_ms / len(y)] * len(y))
-        # Save metrics to CSV file
+
         import uuid
         from datetime import datetime
         run_id = str(uuid.uuid4())
         timestamp = datetime.now().isoformat()
-        # Get confusion matrix
         cm = confusion_matrix(all_labels, all_preds)
         cm_flat = cm.flatten() if cm.size == 4 else [0, 0, 0, 0]  # [TN, FP, FN, TP]
         metrics_df = pd.DataFrame(
@@ -252,19 +261,17 @@ class FlowerClientDP(fl.client.NumPyClient):
         else:
             metrics_df.to_csv(csv_path, header=header, index=False)
         print('Federated validation metrics appended to metrics.csv')
-        # Save summary metrics as a special row in metrics.csv
+
         accuracy = accuracy_score(all_labels, all_preds)
         precision = precision_score(all_labels, all_preds, zero_division=0)
         recall = recall_score(all_labels, all_preds, zero_division=0)
         f1 = f1_score(all_labels, all_preds, zero_division=0)
-        # Calculate True Negative Rate for spoof detection
         import numpy as np
         all_labels_np = np.array(all_labels)
         all_preds_np = np.array(all_preds)
         tn = ((all_labels_np == 0) & (all_preds_np == 0)).sum()
         fp = ((all_labels_np == 0) & (all_preds_np == 1)).sum()
         tnr = tn / (tn + fp) if (tn + fp) > 0 else 0.0
-        # Calculate Binary Cross Entropy
         if len(all_probs) > 0 and len(all_labels) > 0:
             bce = nn.BCELoss()(torch.tensor(all_probs), torch.tensor(all_labels)).item()
             if np.isnan(bce) or np.isinf(bce):
@@ -287,7 +294,6 @@ class FlowerClientDP(fl.client.NumPyClient):
             'conf_matrix': ','.join(map(str, cm_flat)),
             'source': 'FL+DP'
         }
-        # Make sure all columns exist in the same order as metrics_df
         all_columns = list(metrics_df.columns) + ['accuracy', 'precision', 'recall', 'f1_score', 'robustness_tnr', 'bce', 'source']
         for col in all_columns:
             if col not in summary_row:
@@ -301,27 +307,48 @@ class FlowerClientDP(fl.client.NumPyClient):
         print('Summary metrics appended to metrics.csv')
         return 0.0, len(self.trainloader.dataset), {}
 
-# Start the federated client
 if __name__ == "__main__":
-    # Load the best model if it exists
+    if not torch.cuda.is_available():
+        raise RuntimeError("CUDA (GPU) is not available! Please install CUDA drivers and a compatible PyTorch version.")
+    print("[INFO] Available CUDA devices:")
+    for i in range(torch.cuda.device_count()):
+        print(f"  [{i}] {torch.cuda.get_device_name(i)}")
+    selected_device = None
+    for i in range(torch.cuda.device_count()):
+        name = torch.cuda.get_device_name(i)
+        if "4050" in name or "RTX 4050" in name:
+            selected_device = i
+            break
+    if selected_device is None:
+        raise RuntimeError("RTX 4050 GPU not found! Please check your drivers and CUDA setup.")
+    torch.cuda.set_device(selected_device)
+    device = torch.device(f"cuda:{selected_device}")
+    print(f"[INFO] Using GPU: {torch.cuda.get_device_name(selected_device)} (cuda:{selected_device})")
+    import subprocess
+    try:
+        result = subprocess.run(['nvidia-smi', '--query-gpu=memory.total,memory.used', '--format=csv,nounits,noheader'], capture_output=True, text=True)
+        print("[INFO] GPU VRAM (total/used):", result.stdout.strip())
+    except Exception:
+        print("[INFO] Could not query GPU VRAM with nvidia-smi.")
+    torch.backends.cudnn.benchmark = True
+
     if os.path.exists("liveness_model_best.pth"):
-        model = FingerprintLivenessCNN()
+        model = FingerprintLivenessCNN().to(device)
         model.load_state_dict(
-            torch.load("liveness_model_best.pth", map_location=torch.device("cpu"))
+            torch.load("liveness_model_best.pth", map_location=device)
         )
         print("Loaded best model weights from liveness_model_best.pth")
     else:
-        model = FingerprintLivenessCNN()
+        model = FingerprintLivenessCNN().to(device)
         print("No pretrained weights found, starting from scratch.")
     trainloader, valloader = load_data()
-    print(f"[INFO] Final training set size: {len(trainloader.dataset)} samples, {len(trainloader)} batches per epoch.")
-    client = FlowerClientDP(model, trainloader)
-    # Evaluate on validation set after federated training
-    fl.client.start_numpy_client(server_address="localhost:8080", client=client)
-    # Save the updated model after federated training
+    client = FlowerClientDP(model, trainloader, device)
+
+    fl.client.start_client(server_address="localhost:8080", client=client.to_client())
+
     torch.save(model.state_dict(), "liveness_model_best.pth")
     print("Updated model saved as liveness_model_best.pth")
-    # Evaluate on validation set and log metrics
+
     def evaluate_on_val(model, valloader):
         model.eval()
         all_preds = []
@@ -331,7 +358,7 @@ if __name__ == "__main__":
         import time
         with torch.no_grad():
             for x, y in valloader:
-                x, y = x, y.float()
+                x, y = x.to(device), y.float().to(device)
                 y = y.unsqueeze(1)
                 start = time.time()
                 output = model(x)
@@ -384,7 +411,7 @@ if __name__ == "__main__":
         write_metrics_row(summary_row, 'metrics.csv')
         print('Validation metrics after FL+DP appended to metrics.csv')
     evaluate_on_val(model, valloader)
-    # Save a file to show how the model was trained
+
     with open("model_provenance.txt", "w") as f:
         f.write("Model: liveness_model_best.pth\n")
         f.write("Trained with: Federated Learning + Differential Privacy (Opacus)\n")

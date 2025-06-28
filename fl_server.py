@@ -1,11 +1,10 @@
-# This file is the central server for federated learning
+# Central server for federated learning
 import flwr as fl
 
 
-# This disables evaluation on the server
+# Disable evaluation on the server (only clients evaluate)
 class NoEvalFedAvg(fl.server.strategy.FedAvg):
     def configure_evaluate(self, server_round, parameters, client_manager):
-        # Do not run evaluation, just return empty list
         return []
 
 

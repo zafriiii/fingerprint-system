@@ -1,3 +1,4 @@
+# Model and training setup for fingerprint liveness detection
 import os
 import uuid
 from datetime import datetime
@@ -10,13 +11,16 @@ from torch.utils.data import DataLoader
 from torchvision import transforms
 from torchvision.datasets import ImageFolder
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
+import torch.backends.cudnn
+import time
 
-BATCH_SIZE = 32
+torch.backends.cudnn.benchmark = True
+
+BATCH_SIZE = 128
 NUM_EPOCHS = 20
-LEARNING_RATE = 1e-4  
+LEARNING_RATE = 1e-3
 IMAGE_SIZE = 224
 
-# This model and augmentations must be the same as in federated_client_with_dp.py
 from torchvision.models.resnet import ResNet, BasicBlock
 
 class PatchedBasicBlock(BasicBlock):
@@ -40,7 +44,6 @@ class FingerprintLivenessCNN(nn.Module):
     def __init__(self):
         super(FingerprintLivenessCNN, self).__init__()
         self.resnet = patched_resnet18()
-        # Try to load pretrained weights
         try:
             from torchvision import models
             state_dict = models.resnet18(weights=models.ResNet18_Weights.DEFAULT).state_dict()
@@ -48,10 +51,7 @@ class FingerprintLivenessCNN(nn.Module):
         except Exception as e:
             print(f"Warning: Could not load pretrained weights: {e}")
         for name, param in self.resnet.named_parameters():
-            if "layer4" in name or "layer3" in name:
-                param.requires_grad = True
-            else:
-                param.requires_grad = False
+            param.requires_grad = True
         self.classifier = nn.Sequential(
             nn.Linear(1000, 512),
             nn.BatchNorm1d(512),
@@ -74,23 +74,25 @@ class FingerprintLivenessCNN(nn.Module):
     def forward(self, x):
         x = self.resnet(x)
         x = self.classifier(x)
-        return torch.sigmoid(x)
+        return x 
 
-# Set up training and validation image transforms
 train_transform = transforms.Compose([
     transforms.Resize((IMAGE_SIZE, IMAGE_SIZE)),
     transforms.ColorJitter(brightness=0.3, contrast=0.3),
-    transforms.RandomResizedCrop(IMAGE_SIZE, scale=(0.8, 1.0)),
-    transforms.RandomRotation(10),
+    transforms.RandomResizedCrop(IMAGE_SIZE, scale=(0.7, 1.0)),
+    transforms.RandomRotation(15),
     transforms.RandomHorizontalFlip(),
+    transforms.GaussianBlur(3, sigma=(0.1, 2.0)),
     transforms.ToTensor(),
+    transforms.RandomErasing(p=0.3, scale=(0.02, 0.2)),
+    transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
 ])
 val_transform = transforms.Compose([
     transforms.Resize((IMAGE_SIZE, IMAGE_SIZE)),
     transforms.ToTensor(),
+    transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
 ])
 
-# Set dataset folder path
 dataset_path = "data"
 
 train_dataset = ImageFolder(
@@ -100,38 +102,65 @@ val_dataset = ImageFolder(
     root=os.path.join(dataset_path, "val"), transform=val_transform
 )
 
-train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=8, pin_memory=True)
-val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=8, pin_memory=True)
+train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=8, pin_memory=torch.cuda.is_available())
+val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=8, pin_memory=torch.cuda.is_available())
 
 if __name__ == "__main__":
-    # Set up model, loss, and optimizer
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = FingerprintLivenessCNN().to(device)
-    criterion = nn.BCELoss()
-    optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
+    if not torch.cuda.is_available():
+        raise RuntimeError("CUDA (GPU) is not available! Please install CUDA drivers and a compatible PyTorch version.")
 
-    # Load best model if it exists
+    print("[INFO] Available CUDA devices:")
+    for i in range(torch.cuda.device_count()):
+        print(f"  [{i}] {torch.cuda.get_device_name(i)}")
+    selected_device = None
+    for i in range(torch.cuda.device_count()):
+        name = torch.cuda.get_device_name(i)
+        if "4050" in name or "RTX 4050" in name:
+            selected_device = i
+            break
+    if selected_device is None:
+        raise RuntimeError("RTX 4050 GPU not found! Please check your drivers and CUDA setup.")
+    torch.cuda.set_device(selected_device)
+    device = torch.device(f"cuda:{selected_device}")
+    print(f"[INFO] Using GPU: {torch.cuda.get_device_name(selected_device)} (cuda:{selected_device}), Batch size: {BATCH_SIZE}")
+    import subprocess
+    try:
+        result = subprocess.run(['nvidia-smi', '--query-gpu=memory.total,memory.used', '--format=csv,nounits,noheader'], capture_output=True, text=True)
+        print("[INFO] GPU VRAM (total/used):", result.stdout.strip())
+    except Exception:
+        print("[INFO] Could not query GPU VRAM with nvidia-smi.")
+    model = FingerprintLivenessCNN().to(device)
+    criterion = nn.BCEWithLogitsLoss()
+    optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=NUM_EPOCHS, eta_min=1e-6)
+
+    scaler = torch.amp.GradScaler('cuda')
+
     if os.path.exists("liveness_model_best.pth"):
-        model.load_state_dict(torch.load("liveness_model_best.pth", map_location=device))
+        model.load_state_dict(torch.load("liveness_model_best.pth", map_location=device, weights_only=True))
         print("Loaded best model weights from liveness_model_best.pth")
 
-    # Set up learning rate scheduler
-    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.7)  # Lower LR every 10 epochs
-
-    # Make a run ID and timestamp for this training
     run_id = str(uuid.uuid4())
     timestamp = datetime.now().isoformat()
 
-    # Set the column order for metrics.csv
     METRICS_HEADER = [
         "run_id", "epoch", "timestamp", "y_true", "y_pred", "y_prob", "processing_time",
         "accuracy", "precision", "recall", "f1_score", "robustness_tnr", "bce", "conf_matrix", "source"
     ]
 
-    # Start training with early stopping
+    def write_metrics_row(row, csv_path):
+        import pandas as pd
+        row_filled = {k: row.get(k, '') for k in METRICS_HEADER}
+        df = pd.DataFrame([row_filled])
+        if os.path.exists(csv_path):
+            df.to_csv(csv_path, mode="a", header=False, index=False)
+        else:
+            df.to_csv(csv_path, header=METRICS_HEADER, index=False)
+
+
     best_val_loss = float('inf')
     early_stop_counter = 0
-    early_stop_patience = 20 # Number of epochs to wait for improvement
+    early_stop_patience = 20
 
     for epoch in range(NUM_EPOCHS):
         model.train()
@@ -139,11 +168,13 @@ if __name__ == "__main__":
         batch_count = 0
         for images, labels in train_loader:
             images, labels = images.to(device), labels.float().to(device)
-            outputs = model(images).squeeze()
-            loss = criterion(outputs, labels)
             optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
+            with torch.amp.autocast('cuda'):
+                outputs = model(images).squeeze()
+                loss = criterion(outputs, labels)
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
             total_loss += loss.item()
             batch_count += 1
             print(
@@ -153,7 +184,7 @@ if __name__ == "__main__":
         print(
             f"Epoch [{epoch+1}/{NUM_EPOCHS}], Average Loss: {avg_loss:.4f}"
         )
-        # Save BCE loss for this epoch to metrics.csv
+
         epoch_row = {
             "run_id": run_id,
             "epoch": epoch + 1,
@@ -168,31 +199,21 @@ if __name__ == "__main__":
             "f1_score": '',
             "robustness_tnr": '',
             "bce": avg_loss,
+            "conf_matrix": '',
             "source": 'Standalone',
         }
-        csv_path = "metrics.csv"
-        # Always use METRICS_HEADER and fill missing columns with ''
-        def write_metrics_row(row, csv_path):
-            import pandas as pd
-            # Make sure all columns are present and in the right order
-            row_filled = {k: row.get(k, '') for k in METRICS_HEADER}
-            df = pd.DataFrame([row_filled])
-            if os.path.exists(csv_path):
-                df.to_csv(csv_path, mode="a", header=False, index=False)
-            else:
-                df.to_csv(csv_path, header=METRICS_HEADER, index=False)
-        write_metrics_row(epoch_row, csv_path)
+        write_metrics_row(epoch_row, "metrics.csv")
         scheduler.step()
 
-        # Check validation loss for early stopping
         model.eval()
         val_loss = 0
         val_batches = 0
         with torch.no_grad():
             for images, labels in val_loader:
                 images, labels = images.to(device), labels.float().to(device)
-                outputs = model(images).squeeze()
-                loss = criterion(outputs, labels)
+                with torch.amp.autocast('cuda'):
+                    outputs = model(images).squeeze()
+                    loss = criterion(outputs, labels)
                 val_loss += loss.item()
                 val_batches += 1
         avg_val_loss = val_loss / max(1, val_batches)
@@ -200,7 +221,7 @@ if __name__ == "__main__":
         if avg_val_loss < best_val_loss:
             best_val_loss = avg_val_loss
             early_stop_counter = 0
-            # Save the best model so far
+
             torch.save(model.state_dict(), "liveness_model_best.pth")
         else:
             early_stop_counter += 1
@@ -209,7 +230,6 @@ if __name__ == "__main__":
                 print(f"Early stopping triggered at epoch {epoch+1}.")
                 break
 
-    # After training, evaluate and save metrics
     all_labels = []
     all_preds = []
     all_probs = []
@@ -221,82 +241,60 @@ if __name__ == "__main__":
         for images, labels in val_loader:
             images, labels = images.to(device), labels.float().to(device)
             import time
-
             start = time.time()
             outputs = model(images).squeeze()
             end = time.time()
-            elapsed_ms = (end - start) * 1000  # Time for the batch in ms
-            probs = outputs.cpu().numpy()
-            preds = (outputs > 0.5).float().cpu().numpy()
+            elapsed_ms = (end - start) * 1000
+            probs = torch.sigmoid(outputs).cpu().numpy()
+            preds = (probs > 0.5).astype(float)
             all_labels.extend(labels.cpu().numpy())
             all_preds.extend(preds)
             all_probs.extend(probs)
             all_epochs.extend([NUM_EPOCHS] * len(labels))
-            # Save processing time for each sample
             processing_times.extend([elapsed_ms / len(labels)] * len(labels))
 
-    # Make a DataFrame with all metrics
-    # Calculate summary metrics before making the DataFrame
-    accuracy = float(accuracy_score(all_labels, all_preds))
-    precision = float(precision_score(all_labels, all_preds, zero_division=0))
-    recall = float(recall_score(all_labels, all_preds, zero_division=0))
-    f1 = float(f1_score(all_labels, all_preds, zero_division=0))
-    # Get confusion matrix
+    import numpy as np
+    probs_tensor = torch.tensor(all_probs) if len(all_probs) > 0 else torch.tensor([])
+    preds = (probs_tensor > 0.5).float().cpu().numpy() if len(all_probs) > 0 else []
+    accuracy = float(accuracy_score(all_labels, preds)) if len(all_labels) > 0 else 0.0
+    precision = float(precision_score(all_labels, preds, zero_division=0)) if len(all_labels) > 0 else 0.0
+    recall = float(recall_score(all_labels, preds, zero_division=0)) if len(all_labels) > 0 else 0.0
+    f1 = float(f1_score(all_labels, preds, zero_division=0)) if len(all_labels) > 0 else 0.0
     cm = confusion_matrix(all_labels, all_preds)
     cm_flat = cm.flatten() if cm.size == 4 else [0, 0, 0, 0]  # [TN, FP, FN, TP]
-
-    metrics_df = pd.DataFrame(
-        {
-            "run_id": [run_id] * len(all_labels),
-            "epoch": all_epochs,
-            "timestamp": [timestamp] * len(all_labels),
-            "y_true": all_labels,
-            "y_pred": all_preds,
-            "y_prob": all_probs,
-            "processing_time": processing_times,
-            "accuracy": [accuracy] * len(all_labels),
-            "precision": [precision] * len(all_labels),
-            "recall": [recall] * len(all_labels),
-            "f1_score": [f1] * len(all_labels),
-            "conf_matrix": [','.join(map(str, cm_flat))] * len(all_labels),
-            "source": ['Standalone'] * len(all_labels),
-        }
-    )
-
-    # Add metrics to CSV file
-    csv_path = "metrics.csv"
-    if os.path.exists(csv_path):
-        metrics_df.to_csv(csv_path, mode="a", header=False, index=False)
-    else:
-        metrics_df.to_csv(csv_path, header=METRICS_HEADER, index=False)
-    print("Validation metrics appended to metrics.csv")
-
-    # Save the best model (already saved during training)
-    print("Best model saved as liveness_model_best.pth")
-
-    # Calculate summary metrics
-    accuracy = float(accuracy_score(all_labels, all_preds))
-    precision = float(precision_score(all_labels, all_preds, zero_division=0))
-    recall = float(recall_score(all_labels, all_preds, zero_division=0))
-    f1 = float(f1_score(all_labels, all_preds, zero_division=0))
-    # Calculate True Negative Rate for spoof detection
-    import numpy as np
-    all_labels_np = np.array(all_labels)
-    all_preds_np = np.array(all_preds)
-    tn = ((all_labels_np == 0) & (all_preds_np == 0)).sum()
-    fp = ((all_labels_np == 0) & (all_preds_np == 1)).sum()
+    tn = ((np.array(all_labels) == 0) & (np.array(all_preds) == 0)).sum()
+    fp = ((np.array(all_labels) == 0) & (np.array(all_preds) == 1)).sum()
     tnr = float(tn / (tn + fp)) if (tn + fp) > 0 else 0.0
-    # Calculate Binary Cross Entropy
     if len(all_probs) > 0 and len(all_labels) > 0:
-        bce = float(nn.BCELoss()(torch.tensor(all_probs), torch.tensor(all_labels)).item())
+        bce = float(nn.BCELoss()(probs_tensor, torch.tensor(all_labels)).item())
         if np.isnan(bce) or np.isinf(bce):
             bce = 0.0
     else:
         bce = 0.0
-    # Make sure confusion matrix has 4 values
     if not (isinstance(cm_flat, (list, np.ndarray)) and len(cm_flat) == 4):
         cm_flat = [0, 0, 0, 0]
-    # Write summary row to metrics.csv
+
+    for i in range(len(all_labels)):
+        val_row = {
+            "run_id": run_id,
+            "epoch": NUM_EPOCHS,
+            "timestamp": timestamp,
+            "y_true": all_labels[i],
+            "y_pred": all_preds[i],
+            "y_prob": all_probs[i],
+            "processing_time": processing_times[i],
+            "accuracy": accuracy,
+            "precision": precision,
+            "recall": recall,
+            "f1_score": f1,
+            "robustness_tnr": tnr,
+            "bce": bce,
+            "conf_matrix": ','.join(map(str, cm_flat)),
+            "source": 'Standalone',
+        }
+        write_metrics_row(val_row, "metrics.csv")
+    print("Validation metrics appended to metrics.csv")
+
     summary_row = {
         'run_id': run_id,
         'epoch': 'summary',
@@ -314,19 +312,29 @@ if __name__ == "__main__":
         'conf_matrix': ','.join(map(str, cm_flat)),
         'source': 'Standalone',
     }
-    write_metrics_row(summary_row, csv_path)
+    write_metrics_row(summary_row, "metrics.csv")
     print("Summary metrics appended to metrics.csv")
 
-    # Function to predict one image
     def predict_single_image(image_path):
         import cv2
-
+        if not torch.cuda.is_available():
+            raise RuntimeError("CUDA (GPU) is not available! Please install CUDA drivers and a compatible PyTorch version.")
+        device = torch.device("cuda")
         model.eval()
-        img = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
+        img = cv2.imread(image_path)
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         img = cv2.resize(img, (IMAGE_SIZE, IMAGE_SIZE))
         img = img / 255.0
-        tensor = torch.tensor(img).unsqueeze(0).unsqueeze(0).float().to(device)
+
+        img = (img - [0.485, 0.456, 0.406]) / [0.229, 0.224, 0.225]
+        tensor = torch.tensor(img).permute(2, 0, 1).unsqueeze(0).float().to(device)
         with torch.no_grad():
             output = model(tensor)
-            result = "Live" if output.item() > 0.5 else "Spoof"
+            prob = torch.sigmoid(output).item()
+            if prob > 0.9:
+                result = "Live"
+            elif prob < 0.1:
+                result = "Spoof"
+            else:
+                result = "Unknown/Non-fingerprint"
         return result

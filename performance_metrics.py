@@ -1,3 +1,4 @@
+# Utility functions for metrics and evaluation
 import time
 
 import numpy as np
@@ -7,10 +8,8 @@ from sklearn.metrics import (accuracy_score, confusion_matrix, f1_score,
                              precision_score, recall_score)
 
 
+# Get accuracy, precision, recall, and F1-score
 def calculate_metrics(y_true, y_pred):
-    """
-    Get accuracy, precision, recall, and F1-score.
-    """
     return {
         "accuracy": accuracy_score(y_true, y_pred),
         "precision": precision_score(y_true, y_pred),
@@ -19,20 +18,16 @@ def calculate_metrics(y_true, y_pred):
     }
 
 
+# Measure how long a function takes to run
 def measure_processing_time(func, *args, **kwargs):
-    """
-    Get the time it takes to run a function.
-    """
     start = time.time()
     result = func(*args, **kwargs)
     elapsed = time.time() - start
     return result, elapsed
 
 
+# Get True Negative Rate (TNR) for spoof samples
 def robustness_against_spoofing(y_true, y_pred, spoof_label=1, live_label=0):
-    """
-    Get TNR for spoof samples.
-    """
     y_true = np.array(y_true)
     y_pred = np.array(y_pred)
     spoof_mask = y_true == spoof_label
@@ -43,18 +38,14 @@ def robustness_against_spoofing(y_true, y_pred, spoof_label=1, live_label=0):
     return tnr
 
 
+# Get BCE loss for binary classification
 def binary_cross_entropy(y_true, y_pred):
-    """
-    Get BCE loss for binary classification.
-    """
     y_true_tensor = torch.tensor(y_true, dtype=torch.float32)
     y_pred_tensor = torch.tensor(y_pred, dtype=torch.float32)
     bce = nn.BCELoss()
     return bce(y_pred_tensor, y_true_tensor).item()
 
 
+# Get confusion matrix for binary classification
 def get_confusion_matrix(y_true, y_pred):
-    """
-    Get confusion matrix for binary classification.
-    """
     return confusion_matrix(y_true, y_pred)

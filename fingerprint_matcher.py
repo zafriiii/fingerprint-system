@@ -1,7 +1,7 @@
 import cv2
 
 
-# Match two fingerprint images
+# Match two fingerprint images and return result
 def match_fingerprints(
     img1_path, img2_path, min_keypoints=20, match_ratio_threshold=0.15
 ):
