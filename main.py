@@ -3,7 +3,7 @@ import torch
 import torchvision.transforms as transforms
 
 from fingerprint_matcher import match_fingerprints
-from liveness_detection_model import FingerprintLivenessCNN
+from model import FingerprintLivenessCNN
 from performance_metrics import (binary_cross_entropy, calculate_metrics,
                                  get_confusion_matrix,
                                  robustness_against_spoofing)
