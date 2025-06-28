@@ -52,9 +52,9 @@ This project aims to:
 ## File Structure
 
 ```bash
-├── model.py         # CNN model training, validation, metrics export
-├── fl_server.py                 # Flower federated server
-├── fl_with_dp.py         # FL client with DP
+├── model.py                            # CNN model training, validation, metrics export
+├── fl_server.py                        # Flower federated server
+├── fl_with_dp.py                       # FL client with DP
 ├── fingerprint_matcher.py              # OpenCV fingerprint comparison logic
 ├── augment_real.py                     # Data augmentation script
 ├── app.py                              # Streamlit web GUI
