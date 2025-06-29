@@ -30,7 +30,6 @@ class PatchedBasicBlock(BasicBlock):
         return out
 
 def patched_resnet18():
-    # ResNet18 using custom block
     return ResNet(block=PatchedBasicBlock, layers=[2, 2, 2, 2])
 
 class FingerprintLivenessCNN(nn.Module):
@@ -68,7 +67,6 @@ class FingerprintLivenessCNN(nn.Module):
         x = self.classifier(x)
         return x 
     
-# Data loading and augmentations
 BATCH_SIZE = 128
 NUM_WORKERS = 8
 
