@@ -158,19 +158,23 @@ with tab2:
         st.warning("metrics.csv not found. Please run training or federated learning first.")
         st.stop()
 
-    if "epoch" in df.columns:
-        summary_df = df[df["epoch"] == "summary"]
-        if summary_df.empty:
-            st.warning("No summary metrics found in metrics.csv.")
-            st.stop()
-    else:
-        st.warning("No 'epoch' column found. Please update your metrics.csv format.")
+    # Find all summary rows (epoch == 'summary' or 'val_summary')
+    summary_df = df[df["epoch"].isin(["summary", "val_summary"])]
+    if summary_df.empty:
+        st.warning("No summary metrics found in metrics.csv.")
         st.stop()
-
+    # Let user select which summary to view (show both run_id and source)
+    summary_df["label"] = summary_df.apply(
+        lambda row: f"{row['run_id']} ({row['source']})", axis=1
+    )
+    selected_label = st.selectbox(
+        "Select run to view metrics for a specific run and method:",
+        summary_df["label"].values,
+    )
+    run_metrics = summary_df[summary_df["label"] == selected_label].iloc[0]
+    st.info(f"**Training Source:** {run_metrics.get('source', 'Unknown')}")
+    selected_run = run_metrics["run_id"]
     run_ids = summary_df["run_id"].unique()
-    selected_run = st.selectbox("Select run_id to view metrics for a specific run:", run_ids)
-    run_metrics = summary_df[summary_df["run_id"] == selected_run].iloc[0]
-
     def safe_float(val):
         try:
             return float(val)

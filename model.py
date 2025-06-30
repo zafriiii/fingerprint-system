@@ -159,7 +159,7 @@ if __name__ == "__main__":
 
     best_val_loss = float('inf')
     early_stop_counter = 0
-    early_stop_patience = 20
+    early_stop_patience = 7
 
     for epoch in range(NUM_EPOCHS):
         model.train()
@@ -260,7 +260,7 @@ if __name__ == "__main__":
     recall = float(recall_score(all_labels, preds, zero_division=0)) if len(all_labels) > 0 else 0.0
     f1 = float(f1_score(all_labels, preds, zero_division=0)) if len(all_labels) > 0 else 0.0
     cm = confusion_matrix(all_labels, all_preds)
-    cm_flat = cm.flatten() if cm.size == 4 else [0, 0, 0, 0]  # [TN, FP, FN, TP]
+    cm_flat = cm.flatten() if cm.size == 4 else [0, 0, 0, 0]
     tn = ((np.array(all_labels) == 0) & (np.array(all_preds) == 0)).sum()
     fp = ((np.array(all_labels) == 0) & (np.array(all_preds) == 1)).sum()
     tnr = float(tn / (tn + fp)) if (tn + fp) > 0 else 0.0

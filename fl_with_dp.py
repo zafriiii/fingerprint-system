@@ -67,19 +67,20 @@ class FingerprintLivenessCNN(nn.Module):
         x = self.classifier(x)
         return x 
     
-BATCH_SIZE = 128
+BATCH_SIZE = 32
 NUM_WORKERS = 8
 
 def load_data(val_split=0.2):
+    """
+    Loads the training and validation data loaders with minimal transforms (Resize, ToTensor, Normalize).
+    This is optimal for pre-augmented datasets and maximizes data loading speed.
+    """
     transform = transforms.Compose([
         transforms.Resize((224, 224)),
-        transforms.ColorJitter(brightness=0.3, contrast=0.3),
-        transforms.RandomResizedCrop(224, scale=(0.7, 1.0)),
-        transforms.RandomRotation(15),
-        transforms.RandomHorizontalFlip(),
         transforms.ToTensor(),
         transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
     ])
+    print("[INFO] Using minimal transforms: Resize, ToTensor, Normalize.")
     dataset = ImageFolder("data/train", transform=transform)
     num_val = int(val_split * len(dataset))
     num_train = len(dataset) - num_val
@@ -127,6 +128,7 @@ class FlowerClientDP(fl.client.NumPyClient):
                 target_delta=1e-5,
                 epochs=1,
                 max_grad_norm=1.0,
+                virtual_batch_size=128,
             )
         )
         self.device = device
@@ -156,6 +158,7 @@ class FlowerClientDP(fl.client.NumPyClient):
         best_val_loss = float('inf')
         epochs_no_improve = 0
         epoch_times = []
+        total_start = time.time()
         print(f"[INFO] Starting federated training: {len(self.trainloader.dataset)} samples, {len(self.trainloader)} batches per epoch, {num_epochs} epochs.")
         for epoch in range(1, num_epochs + 1):
             epoch_start = time.time()
@@ -180,7 +183,8 @@ class FlowerClientDP(fl.client.NumPyClient):
             remaining_epochs = num_epochs - epoch
             eta_seconds = avg_epoch_time * remaining_epochs
             eta_str = time.strftime('%H:%M:%S', time.gmtime(eta_seconds))
-            print(f"Epoch {epoch}, Avg Loss: {avg_loss:.4f}, Time: {epoch_time:.2f}s, ETA: {eta_str}")
+            print(f"[TIMER] Epoch {epoch} finished in {epoch_time:.2f}s. Avg per epoch: {avg_epoch_time:.2f}s. ETA: {eta_str}")
+            print(f"Epoch {epoch}, Avg Loss: {avg_loss:.4f}")
 
             val_loss = avg_loss
             if val_loss < best_val_loss:
@@ -214,6 +218,9 @@ class FlowerClientDP(fl.client.NumPyClient):
                 "source": 'FL+DP',
             }
             write_metrics_row(epoch_row, 'metrics.csv')
+        total_end = time.time()
+        total_time = total_end - total_start
+        print(f"[TIMER] Total training time: {total_time/60:.2f} minutes ({total_time:.2f} seconds)")
         return self.get_parameters(config={}), len(self.trainloader.dataset), {}
 
     def evaluate(self, parameters, config):
@@ -279,8 +286,17 @@ class FlowerClientDP(fl.client.NumPyClient):
         fp = ((all_labels_np == 0) & (all_preds_np == 1)).sum()
         tnr = tn / (tn + fp) if (tn + fp) > 0 else 0.0
         if len(all_probs) > 0 and len(all_labels) > 0:
-            bce = nn.BCELoss()(torch.tensor(all_probs), torch.tensor(all_labels)).item()
-            if np.isnan(bce) or np.isinf(bce):
+            all_probs_np = np.array(all_probs).reshape(-1)
+            all_labels_np = np.array(all_labels).reshape(-1)
+            probs_sigmoid = torch.sigmoid(torch.tensor(all_probs_np, dtype=torch.float32)).cpu().reshape(-1)
+            labels_tensor = torch.tensor(all_labels_np, dtype=torch.float32).cpu().reshape(-1)
+            print(f"[DEBUG] BCE input shapes: probs_sigmoid={probs_sigmoid.shape}, labels_tensor={labels_tensor.shape}")
+            if probs_sigmoid.shape == labels_tensor.shape:
+                bce = nn.BCELoss()(probs_sigmoid, labels_tensor).item()
+                if np.isnan(bce) or np.isinf(bce):
+                    bce = 0.0
+            else:
+                print(f"[WARNING] BCE input shape mismatch: probs_sigmoid={probs_sigmoid.shape}, labels_tensor={labels_tensor.shape}. BCE not computed.")
                 bce = 0.0
         else:
             bce = 0.0
@@ -388,8 +404,17 @@ if __name__ == "__main__":
         fp = ((np.array(all_labels) == 0) & (np.array(all_preds) == 1)).sum()
         tnr = tn / (tn + fp) if (tn + fp) > 0 else 0.0
         if len(all_probs) > 0 and len(all_labels) > 0:
-            bce = nn.BCELoss()(torch.tensor(all_probs), torch.tensor(all_labels)).item()
-            if np.isnan(bce) or np.isinf(bce):
+            all_probs_np = np.array(all_probs).reshape(-1)
+            all_labels_np = np.array(all_labels).reshape(-1)
+            probs_sigmoid = torch.sigmoid(torch.tensor(all_probs_np, dtype=torch.float32)).cpu().reshape(-1)
+            labels_tensor = torch.tensor(all_labels_np, dtype=torch.float32).cpu().reshape(-1)
+            print(f"[DEBUG] BCE input shapes: probs_sigmoid={probs_sigmoid.shape}, labels_tensor={labels_tensor.shape}")
+            if probs_sigmoid.shape == labels_tensor.shape:
+                bce = nn.BCELoss()(probs_sigmoid, labels_tensor).item()
+                if np.isnan(bce) or np.isinf(bce):
+                    bce = 0.0
+            else:
+                print(f"[WARNING] BCE input shape mismatch: probs_sigmoid={probs_sigmoid.shape}, labels_tensor={labels_tensor.shape}. BCE not computed.")
                 bce = 0.0
         else:
             bce = 0.0

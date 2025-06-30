@@ -18,8 +18,7 @@ env/
 *.pth
 *.ckpt
 *.log
-metrics.csv
-liveness_model_best.pth
+*.csv
 
 # Streamlit cache
 .streamlit/
