@@ -1,4 +1,3 @@
-# Streamlit app for fingerprint liveness detection and matching
 import os
 
 import streamlit as st
@@ -158,12 +157,11 @@ with tab2:
         st.warning("metrics.csv not found. Please run training or federated learning first.")
         st.stop()
 
-    # Find all summary rows (epoch == 'summary' or 'val_summary')
     summary_df = df[df["epoch"].isin(["summary", "val_summary"])]
     if summary_df.empty:
         st.warning("No summary metrics found in metrics.csv.")
         st.stop()
-    # Let user select which summary to view (show both run_id and source)
+
     summary_df["label"] = summary_df.apply(
         lambda row: f"{row['run_id']} ({row['source']})", axis=1
     )

@@ -238,7 +238,7 @@ class FlowerClientDP(fl.client.NumPyClient):
                 start = time.time()
                 output = self.base_model(x)
                 end = time.time()
-                elapsed_ms = (end - start) * 1000  # Time for the batch in ms
+                elapsed_ms = (end - start) * 1000
                 probs = output.cpu().numpy()
                 preds = (output > 0.5).float().cpu().numpy()
                 all_preds.extend(preds)
