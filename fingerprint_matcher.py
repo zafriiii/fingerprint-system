@@ -4,6 +4,8 @@ import cv2
 def match_fingerprints(
     img1_path, img2_path, min_keypoints=20, match_ratio_threshold=0.15
 ):
+    # Compares two fingerprint images and determines if they match
+    # Returns a string indicating match, mismatch, or error
     img1 = cv2.imread(img1_path, cv2.IMREAD_GRAYSCALE)
     img2 = cv2.imread(img2_path, cv2.IMREAD_GRAYSCALE)
 
@@ -43,5 +45,6 @@ def match_fingerprints(
 
 
 if __name__ == "__main__":
+    # Example usage: compares two sample fingerprint images and prints the result
     result = match_fingerprints("finger1.png", "finger2.png")
     print(result)

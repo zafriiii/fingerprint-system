@@ -19,7 +19,9 @@ from torchvision.models.resnet import ResNet, BasicBlock
 from torchvision import models
 
 class PatchedBasicBlock(BasicBlock):
+    # Custom basic block to patch ResNet for compatibility with the fingerprint liveness model
     def forward(self, x):
+        # Forward pass for the patched basic block
         identity = x
         out = self.conv1(x)
         out = self.bn1(out)
@@ -33,10 +35,13 @@ class PatchedBasicBlock(BasicBlock):
         return out
 
 def patched_resnet18():
+    # Returns a ResNet-18 model using the patched basic block for fingerprint liveness detection
     return ResNet(block=PatchedBasicBlock, layers=[2, 2, 2, 2])
 
 class FingerprintLivenessCNN(nn.Module):
+    # Neural network for fingerprint liveness detection using a modified ResNet-18 backbone
     def __init__(self):
+        # Initializes the model, loads pretrained weights, and sets up the classifier
         super(FingerprintLivenessCNN, self).__init__()
         self.resnet = patched_resnet18()
         try:
@@ -45,6 +50,7 @@ class FingerprintLivenessCNN(nn.Module):
         except Exception as e:
             print(f"Warning: Could not load pretrained weights: {e}")
         for name, param in self.resnet.named_parameters():
+            # Only train the last two layers of ResNet
             if "layer4" in name or "layer3" in name:
                 param.requires_grad = True
             else:
@@ -64,17 +70,20 @@ class FingerprintLivenessCNN(nn.Module):
         self._set_relu_inplace(self.classifier)
 
     def _set_relu_inplace(self, module):
+        # Sets all ReLU activations in the given module to not operate in-place
         for m in module.modules():
             if isinstance(m, nn.ReLU):
                 m.inplace = False
 
     def forward(self, x):
+        # Forward pass for the fingerprint liveness model
         x = self.resnet(x)
         x = self.classifier(x)
         return torch.sigmoid(x)
 
 @st.cache_resource
 def load_model():
+    # Loads the trained fingerprint liveness model and sets it to evaluation mode
     model = FingerprintLivenessCNN().to(DEVICE)
     model.load_state_dict(torch.load(MODEL_PATH, map_location=DEVICE))
     model.eval()
@@ -174,6 +183,7 @@ with tab2:
     selected_run = run_metrics["run_id"]
     run_ids = summary_df["run_id"].unique()
     def safe_float(val):
+        # Safely converts a value to float, returns None if conversion fails
         try:
             return float(val)
         except (ValueError, TypeError):

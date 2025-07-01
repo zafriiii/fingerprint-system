@@ -16,7 +16,9 @@ from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_sc
 from torchvision.models.resnet import ResNet, BasicBlock
 
 class PatchedBasicBlock(BasicBlock):
+    # Custom basic block to patch ResNet for compatibility with the fingerprint liveness model
     def forward(self, x):
+        # Forward pass for the patched basic block
         identity = x
         out = self.conv1(x)
         out = self.bn1(out)
@@ -30,10 +32,13 @@ class PatchedBasicBlock(BasicBlock):
         return out
 
 def patched_resnet18():
+    # Returns a ResNet-18 model using the patched basic block for fingerprint liveness detection
     return ResNet(block=PatchedBasicBlock, layers=[2, 2, 2, 2])
 
 class FingerprintLivenessCNN(nn.Module):
+    # Neural network for fingerprint liveness detection using a modified ResNet-18 backbone
     def __init__(self):
+        # Initializes the model, loads pretrained weights, and sets up the classifier
         super(FingerprintLivenessCNN, self).__init__()
         self.resnet = patched_resnet18()
         try:
@@ -58,11 +63,13 @@ class FingerprintLivenessCNN(nn.Module):
         self._set_relu_inplace(self.classifier)
 
     def _set_relu_inplace(self, module):
+        # Sets all ReLU activations in the given module to not operate in-place
         for m in module.modules():
             if isinstance(m, nn.ReLU):
                 m.inplace = False
 
     def forward(self, x):
+        # Forward pass for the fingerprint liveness model
         x = self.resnet(x)
         x = self.classifier(x)
         return x 

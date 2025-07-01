@@ -1,6 +1,7 @@
 import flwr as fl
 
 class NoEvalFedAvg(fl.server.strategy.FedAvg):
+    # Custom strategy that disables evaluation during federated learning rounds
     def configure_evaluate(self, server_round, parameters, client_manager):
         return []
 

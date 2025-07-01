@@ -36,6 +36,7 @@ existing_augmented = len(
 idx = 0
 aug_idx = 0
 while existing_augmented < TARGET_COUNT:
+    # Loads an image, applies augmentation, and saves the result
     file = input_files[idx % len(input_files)]
     full_path = os.path.join(input_dir, file)
     img = Image.open(full_path).convert("RGB")

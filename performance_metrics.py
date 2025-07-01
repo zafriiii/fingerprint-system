@@ -6,8 +6,9 @@ import torch.nn as nn
 from sklearn.metrics import (accuracy_score, confusion_matrix, f1_score,
                              precision_score, recall_score)
 
-
 def calculate_metrics(y_true, y_pred):
+    # Computes accuracy, precision, recall, and F1-score for predictions
+    # Returns a dictionary with metric values
     """
     Calculate accuracy, precision, recall, and F1-score.
     Args:
@@ -16,6 +17,8 @@ def calculate_metrics(y_true, y_pred):
     Returns:
         dict: Dictionary with accuracy, precision, recall, and f1_score.
     """
+    # Computes accuracy, precision, recall, and F1-score for predictions
+    # Returns a dictionary with metric values
     return {
         "accuracy": accuracy_score(y_true, y_pred),
         "precision": precision_score(y_true, y_pred),
@@ -25,6 +28,8 @@ def calculate_metrics(y_true, y_pred):
 
 
 def measure_processing_time(func, *args, **kwargs):
+    # Measures the processing time of a function call
+    # Returns the result and elapsed time in seconds
     """
     Measure the processing time of a function.
     Returns:
@@ -38,6 +43,8 @@ def measure_processing_time(func, *args, **kwargs):
 
 
 def robustness_against_spoofing(y_true, y_pred, spoof_label=1, live_label=0):
+    # Calculates the model's robustness against spoofing attacks (True Negative Rate)
+    # Returns a float TNR value
     """
     Calculate robustness against spoofing as the True Negative Rate (TNR) for spoof samples.
     Args:
@@ -59,6 +66,8 @@ def robustness_against_spoofing(y_true, y_pred, spoof_label=1, live_label=0):
 
 
 def binary_cross_entropy(y_true, y_pred):
+    # Calculates the binary cross entropy loss between predictions and targets
+    # Returns a float loss value
     """
     Calculate Binary Cross Entropy loss for binary classification.
     Args:
@@ -74,6 +83,8 @@ def binary_cross_entropy(y_true, y_pred):
 
 
 def get_confusion_matrix(y_true, y_pred):
+    # Generates a confusion matrix for binary classification results
+    # Returns a list [TN, FP, FN, TP]
     """
     Calculate the confusion matrix for binary classification.
     Args:
